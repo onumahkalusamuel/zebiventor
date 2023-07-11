@@ -168,7 +168,7 @@ const updateCartWithelected = () => {
           </button>
         </form>
         <div class="flex my-3 space-x-2">
-          <div class="w-[50%] p-2 border-yellow-600 border-[1px] h-[60vh] overflow-scroll pr-1">
+          <div class="w-[50%] p-2 border-yellow-600 border-[1px] h-[60vh] overflow-scroll no-scrollbar pr-1">
             <div class="list">
               <table class="table-fixed w-full">
                 <thead>
@@ -191,7 +191,7 @@ const updateCartWithelected = () => {
               </table>
             </div>
           </div>
-          <div class="w-[50%] p-2 border-yellow-600 border-[1px] h-[60vh] overflow-scroll pr-1">
+          <div class="w-[50%] p-2 border-yellow-600 border-[1px] h-[60vh] overflow-scroll no-scrollbar pr-1">
 
             <table class="table-fixed w-full">
               <thead>
@@ -249,7 +249,7 @@ const updateCartWithelected = () => {
               </button>
             </div>
           </div>
-          <div class=" overflow-scroll pr-1">
+          <div class=" overflow-scroll no-scrollbar pr-1">
             <table class="table-auto w-full">
               <thead>
                 <tr>

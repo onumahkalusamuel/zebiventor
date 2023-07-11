@@ -60,7 +60,7 @@ onMounted(async() => {
 
     <div class="text-xl py-4">Packing List</div>
     <div class="flex">
-      <div class="w-full border-[1px] border-yellow-600 px-3 p-2 h-[50vh] overflow-scroll">
+      <div class="w-full border-[1px] border-yellow-600 px-3 p-2 h-[50vh] overflow-scroll no-scrollbar">
         <div class="">
             <table class="table-auto w-full">
               <thead>

@@ -77,7 +77,7 @@ const logout = async () => {
         </a>
       </div>
     </header>
-    <main class="flex-1 h-[calc(100vh-70px)] overflow-scroll">
+    <main class="flex-1 h-[calc(100vh-70px)] overflow-scroll no-scrollbar">
       <router-view></router-view>
     </main>
     <footer class="w-full flex border-t-2 border-yellow-600 h-[30px] text-yellow-600 text-sm justify-center items-center">  
