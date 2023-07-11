@@ -9,21 +9,23 @@ type Sale struct {
 	BaseModel
 	DeletedAt       gorm.DeletedAt   `gorm:"index" json:"-"`
 	StaffID         string           `gorm:"not null;references:staffs(id)" json:"-"`
-	CustomerID      string           `gorm:"not null;references:customers(id)"`
-	Details         []InvoiceDetails `gorm:"types:bytes;serializer:gob"`
-	SubTotal        uint             `gorm:"not 0"`
-	DiscountAmount  uint             `gorm:"default 0"`
-	GrandTotal      uint             `gorm:"default 0"`
-	PaymentRefernce string           `gorm:"default null"`
-	Customer        *Customer
+	CustomerID      string           `gorm:"not null;references:customers(id)" json:"customer_id"`
+	Details         []InvoiceDetails `gorm:"types:bytes;serializer:gob" json:"details"`
+	SubTotal        uint             `gorm:"not 0" json:"sub_total"`
+	DiscountAmount  uint             `gorm:"default 0" json:"discount_amount"`
+	GrandTotal      uint             `gorm:"default 0" json:"grand_total"`
+	PaymentMethod   string           `gorm:"default null" json:"payment_method"`
+	PaymentRefernce string           `gorm:"default null" json:"payment_reference"`
+	Customer        *Customer        `json:"customer"`
 }
 
 type InvoiceDetails struct {
-	ProductName string
-	ProductID   string
-	UnitPrice   uint
-	Qty         uint
-	Total       uint
+	ProductName string `json:"product_name"`
+	ProductID   string `json:"product_id"`
+	ProductCode string `json:"product_code"`
+	UnitPrice   uint   `json:"unit_price"`
+	Qty         uint   `json:"qty"`
+	Total       uint   `json:"total"`
 }
 
 func (m *Sale) Update() error {

@@ -1,79 +1,90 @@
-<script lang="ts">
-import { RouterView, RouterLink } from 'vue-router';
-import { user, auth, store } from '../stores';
-import TextField from '../components/form/TextField.vue';
+<script lang="ts" setup>
+import { RouterView, RouterLink, useRouter } from 'vue-router';
+import { auth, store } from '../stores';
 import {
-  MagnifyingGlassIcon,
-  Bars4Icon,
+  ListBulletIcon,
+  UsersIcon,
+  SparklesIcon,
+  UserGroupIcon,
   BellAlertIcon,
-  Cog8ToothIcon,
+  Square3Stack3DIcon,
   LockClosedIcon,
 } from '@heroicons/vue/24/outline';
 import { StoreDetails } from '../../wailsjs/go/controllers/General'
-import {ReadProfile} from '../../wailsjs/go/controllers/Staff'
-export default {
-    name: "AppLayout",
-    methods: {},
-    setup() {
-        return {
-            user,
-            store,
-            auth
-        };
-    },
-    async mounted() {
-        try {
-            // get hospital
-            const req = await StoreDetails();
-            if (req)
-                store.setAll(req);
-            // get user
-            const profile = await ReadProfile();
-            // if (profile)
-                // user.setAll(profile);
-        }
-        catch (e) {
-            console.log(e);
-        }
-    },
-    components: { TextField, MagnifyingGlassIcon, Bars4Icon, BellAlertIcon, Cog8ToothIcon, RouterLink, LockClosedIcon }
-}; </script>;
+import { onMounted } from 'vue';
+
+const router = useRouter();
+
+onMounted(async() => {
+  try {
+    const req = await StoreDetails();
+    console.log(req);
+    if (req) store.setAll(req);
+  }
+  catch (e) {
+    console.log(e);
+  }
+})
+
+const logout = async () => {
+  auth.reset();
+  router.push({name:'login'});
+}
+</script>;
 
 <template>
-  <div class="flex flex-col h-screen">
-    <header class="w-full flex toolbar bg-[#0078d4] h-[40px]">
-      <a class="header-icon-link w-[48px] hover:bg-[#1664a7]">
-        <bars4-icon class="text-white h-6 w-6" />
-      </a>
-      <router-link class="header-icon-link font-bold text-[14px] px-3 hover:bg-[#1664a7]" :to="{name: 'dashboard'}">
-        {{ store.get('name') }}
-      </router-link>   
-      <div class="search-container flex flex-col h-full items-center">
-        <text-field name="search" class="max-w-[800px] border-none mb-none" placeholder="Search">
-          <template #prepend>
-            <magnifying-glass-icon class="h-5 w-5 text-gray-500"/>
-          </template>
-        </text-field>
+  <div class="flex flex-col h-screen bg-stone-950 text-yellow-600">
+    <header class="w-full flex toolbar bg-yellow-600 h-[40px] text-stone-950 justify-between">
+      <div class="flex">
+        <a class="header-icon-link flex w-[48px] hover:bg-yellow-700">
+          <SparklesIcon class="h-6 w-6" />
+        </a>
+        <router-link class="header-icon-link font-bold text-[18px] px-3 hover:bg-yellow-700" :to="{name: 'dashboard'}">
+          {{ store.name }}
+        </router-link>   
       </div>
       <div style="display:flex; flex: 0 0 auto">
-        <a class="header-icon-link w-[48px]">
-          <bell-alert-icon class="text-white h-5 w-5"/>
+        <router-link title="Staff" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'staff'}">
+          <users-icon class="h-5 w-5"/>
+          <span class="pl-2 hidden lg:block">Staff</span>
+        </router-link>
+        <router-link title="Customers" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'customers'}">
+          <user-group-icon class="h-5 w-5"/>
+          <span class="pl-2 hidden lg:block">Customers</span>
+        </router-link>
+        <router-link title="Categories" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'categories'}">
+          <list-bullet-icon class="h-5 w-5"/>
+          <span class="pl-2 hidden lg:block">Categories</span>
+        </router-link>
+        <router-link title="Products" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'products'}">
+          <square3-stack3-d-icon class="h-5 w-5"/>
+          <span class="pl-2 hidden lg:block">Products</span>
+        </router-link>
+        <router-link title="Sales" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'sales'}">
+          <bell-alert-icon class="h-5 w-5"/>
+          <span class="pl-2 hidden lg:block">Sales</span>
+        </router-link>
+      </div>
+      <div class="flex">
+        <a class="header-icon-link hover:bg-yellow-700">
+          <div class="px-3">
+            <div class="avatarmenu-username">[{{ auth.username }}]</div>
+          </div>
+        </a>
+        <a class="header-icon-link px-3 hover:bg-yellow-700" @click="logout">
+          <lock-closed-icon class="h-5 w-5 mr-2"/>
+          <span>Logout</span>
         </a>
       </div>
-      <a class="header-icon-link hover:bg-[#1664a7]">
-        <div class="flex flex-col text-right px-3">
-          <div class="avatarmenu-username">{{ user.get('name') }} {{ user.get('name') }}</div>
-          <div class="avatarmenu-userid">{{  user.get('id') }}</div>
-        </div>
-      </a>
-      <a class="header-icon-link px-3" @click="() => {auth.setJwt(''); user.reset(); $router.push({name:'login'});}">
-        <lock-closed-icon class="text-white h-5 w-5 mr-2"/>
-        <span>Logout</span>
-      </a>
     </header>
-    <main class="flex-1 flex-scroll">
+    <main class="flex-1 h-[calc(100vh-70px)] overflow-scroll">
       <router-view></router-view>
     </main>
+    <footer class="w-full flex border-t-2 border-yellow-600 h-[30px] text-yellow-600 text-sm justify-center items-center">  
+      <router-link class="font-bold text-[12px] px-3 hover:bg-stone-800" to="mailto:zebitechprojects@gmail.com">
+        ZEBINV 1.0.0
+      </router-link>
+    </footer>
   </div>
 </template>
 
@@ -88,12 +99,8 @@ export default {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  color:white;
   text-decoration: none;
   cursor:pointer;
-}
-.header-icon-link:hover {
-  background-color: #1664a7;
 }
 .search-container {
   margin-right: 15px;

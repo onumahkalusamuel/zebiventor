@@ -9,26 +9,28 @@ import { controllers } from '../../wailsjs/go/models'
 
 const router = useRouter();
 const storesetup = ref({address: '', email: '', logo: '', name: '', phone: ''} as controllers.SetupRequest);
-const logo = ref(null);
+// const logo = ref(null);
 
-const hospitalSetup = async () => {
-  const hospitalSetup = await Setup(storesetup.value);
-  if(hospitalSetup?.message) {
-    toasts.addToast({message: hospitalSetup.message, type: 'success'});
-    router.push({name: 'login'})
+const storeSetup = async () => {
+  const storeSetup = await Setup(storesetup.value);
+  if(!storeSetup.success && storeSetup.code !== 1) {
+    toasts.addToast({message: storeSetup.message, type: 'error'});
+    return;
   }
+  toasts.addToast({message: storeSetup.message, type: 'success'});
+  router.push({name: 'login'})
 }
 </script>;
 
 <template>
-  <p class="text-xl">Hospital Setup</p>
-  <form v-on:submit.prevent="hospitalSetup" enctype="multipart/form-data">
+  <p class="text-xl">Store Setup</p>
+  <form v-on:submit.prevent="storeSetup" enctype="multipart/form-data" class="my-5">
     <div>
-      <input v-model="storesetup.name" name="hospital_name" placeholder="Hospital Name" class="w-full mb-2"/>
-      <input v-model="storesetup.address" name="hospital_address" placeholder="Physical Address" class="w-full mb-2"/>
-      <input  v-model="storesetup.email" name="hospital_email" placeholder="Email Address" class="w-full mb-2"/>
-      <input v-model="storesetup.phone" name="hospital_phone" placeholder="Phone Number" class="w-full mb-2"/>
-      <input label="Hospital Logo" name="hospital_logo" class="w-full mb-2 font-xl" ref="logo" type="file"/>
+      <TextField v-model="storesetup.name" name="name" placeholder="Store Name" class="w-full mb-2"/>
+      <TextField v-model="storesetup.address" name="address" placeholder="Physical Address" class="w-full mb-2"/>
+      <TextField  v-model="storesetup.email" name="email" placeholder="Email Address" class="w-full mb-2"/>
+      <TextField v-model="storesetup.phone" name="phone" placeholder="Phone Number" class="w-full mb-2"/>
+      <!-- <TextField v-model="storesetup.logo" label="Store Logo" name="logo" class="w-full mb-2 font-xl" ref="logo" type="file"/> -->
       <PrimaryButton class="w-full mb-2" type="submit">Submit</PrimaryButton>
     </div>
   </form>

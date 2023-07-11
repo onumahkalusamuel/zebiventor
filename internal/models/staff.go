@@ -8,11 +8,11 @@ import (
 type Staff struct {
 	BaseModel
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-	Name      string         `gorm:"not null"`
-	Phone     string         `gorm:"default:null"`
-	Sex       string         `gorm:"default:null"`
-	Role      uint           `gorm:"default:2"`
-	Username  string         `gorm:"not null;unique"`
+	Name      string         `gorm:"not null" json:"name"`
+	Phone     string         `gorm:"default:null" json:"phone"`
+	Sex       string         `gorm:"default:null" json:"sex"`
+	Role      uint           `gorm:"default:2" json:"role"`
+	Username  string         `gorm:"not null;unique" json:"username"`
 	Password  string         `gorm:"not null" json:"-"`
 }
 

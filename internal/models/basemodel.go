@@ -8,9 +8,9 @@ import (
 )
 
 type BaseModel struct {
-	ID        string    `gorm:"primarykey"`
+	ID        string    `gorm:"primarykey" json:"id"`
 	UpdatedAt time.Time `json:"-"`
-	CreatedAt time.Time
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (u *BaseModel) BeforeCreate(tx *gorm.DB) (err error) {

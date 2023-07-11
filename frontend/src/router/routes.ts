@@ -2,14 +2,20 @@ import { RouteRecordRaw } from 'vue-router';
 import { appGuard, softwareGuard } from '../guards';
 
 import MainLayout from '../layouts/MainLayout.vue';
-// import AppLayout from '../layouts/AppLayout.vue';
+import AppLayout from '../layouts/AppLayout.vue';
 
 import Activate from '../pages/Activate.vue';
-import Login from '../pages/Login.vue';
 import CreateAdmin from '../pages/CreateAdmin.vue';
-
 import StoreSetup from '../pages/StoreSetup.vue';
-// import Dashboard from '../pages/app/Dashboard.vue';
+import Login from '../pages/Login.vue';
+
+import Dashboard from '../pages/app/Dashboard.vue';
+import Categories from '../pages/app/Categories.vue';
+import Products from '../pages/app/Products.vue';
+import Sales from '../pages/app/Sales.vue';
+import SalesPreview from '../pages/app/SalesPreview.vue';
+import Customers from '../pages/app/Customers.vue';
+import Staff from '../pages/app/Staff.vue';
 
 // import Patients from '../pages/app/patients/Index.vue';
 // import AddPatient from '../pages/app/patients/Add.vue';
@@ -37,28 +43,17 @@ export const routes: RouteRecordRaw[] = [
     ]
   },
   { path: '/login', beforeEnter: softwareGuard, component: Login, name: 'login' },
-  // {
-  //   path: '/app/', component: AppLayout, beforeEnter: [appGuard, softwareGuard], children: [
-  //     { path: 'dashboard', component: Dashboard, name: 'dashboard' },
-
-  //     { path: 'patients', component: Patients, name: 'patients' },
-  //     { path: 'patients/add', component: AddPatient, name: 'add-patient' },
-  //     { path: 'patients/:id', component: ViewPatient, name: 'view-patient' },
-  //     { path: 'patients/:id/next-of-kin', component: NextOfKin, name: 'next-of-kin' },
-  //     { path: 'patients/:id/patient-history', component: PatientHistory, name: 'patient-history' },
-  //     { path: 'patients/:id/patient-history/add', component: PatientHistoryAdd, name: 'patient-history-add' },
-  //     { path: 'patients/:id/patient-history/:hid', component: PatientHistoryView, name: 'patient-history-view' },
-
-  //     { path: 'deliveries', component: Deliveries, name: 'deliveries' },
-  //     { path: 'deliveries/add', component: AddDelivery, name: 'add-delivery' },
-  //     { path: 'deliveries/:id', component: ViewDelivery, name: 'view-delivery' },
-
-  //     { path: 'staff', component: Staff, name: 'staff' },
-  //     { path: 'staff/add', component: AddStaff, name: 'add-staff' },
-  //     { path: 'staff/:id', component: ViewStaff, name: 'view-staff' },
-
-  //     { path: ':pathMatch(.*)', redirect: { name: 'dashboard' } },
-  //   ]
-  // },
+  {
+    path: '/app/', component: AppLayout, beforeEnter: [appGuard, softwareGuard], children: [
+      { path: 'dashboard', component: Dashboard, name: 'dashboard' },
+      { path: 'categories', component: Categories, name: 'categories' },
+      { path: 'products', component: Products, name: 'products' },
+      { path: 'sales', component: Sales, name: 'sales' },
+      { path: 'sales-preview/:id', component: SalesPreview, name: 'sales-preview' },
+      { path: 'customers', component: Customers, name: 'customers' },
+      { path: 'staff', component: Staff, name: 'staff' },
+      { path: ':pathMatch(.*)', redirect: { name: 'dashboard' } },
+    ]
+  },
   { path: '/:pathMatch(.*)*', redirect: { name: 'login' } },
 ];

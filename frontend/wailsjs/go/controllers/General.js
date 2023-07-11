@@ -10,6 +10,10 @@ export function CheckActivation() {
   return window['go']['controllers']['General']['CheckActivation']();
 }
 
+export function CheckLogin() {
+  return window['go']['controllers']['General']['CheckLogin']();
+}
+
 export function CreateAdmin(arg1) {
   return window['go']['controllers']['General']['CreateAdmin'](arg1);
 }

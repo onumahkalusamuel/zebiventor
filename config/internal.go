@@ -21,10 +21,10 @@ var (
 )
 
 type LoggedInStruct struct {
-	Role     uint
-	Username string
-	Name     string
-	ID       string
+	ID       string `json:"id"`
+	Role     uint   `json:"role"`
+	Name     string `json:"name"`
+	Username string `json:"username"`
 }
 
 var LoggedIn = LoggedInStruct{
@@ -39,11 +39,11 @@ var (
 	InitSettings = map[string]string{
 		"installation_code": HashedID,
 		"activation_code":   "",
-		"store_name":        "",
-		"store_address":     "",
-		"store_phone":       "",
-		"store_email":       "",
-		"store_logo":        "",
+		"name":              "",
+		"address":           "",
+		"phone":             "",
+		"email":             "",
+		"logo":              "",
 		"currency_code":     "",
 	}
 )

@@ -10,6 +10,10 @@ export function Delete(arg1) {
   return window['go']['controllers']['Staff']['Delete'](arg1);
 }
 
+export function ReadAll(arg1) {
+  return window['go']['controllers']['Staff']['ReadAll'](arg1);
+}
+
 export function ReadOne(arg1) {
   return window['go']['controllers']['Staff']['ReadOne'](arg1);
 }

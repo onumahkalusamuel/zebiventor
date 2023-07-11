@@ -1,10 +1,6 @@
 package models
 
 import (
-	"fmt"
-	"strconv"
-	"strings"
-
 	"github.com/onumahkalusamuel/zebiventor/config"
 	"gorm.io/gorm"
 )
@@ -12,9 +8,8 @@ import (
 type Category struct {
 	BaseModel
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-	Name      string         `gorm:"default:null"`
-	Price     uint           `gorm:"default:null"`
-	Products  []*Product     `gorm:"constraint:onDelete:SET NULL"`
+	Name      string         `gorm:"default:null" json:"name"`
+	Products  []*Product     `gorm:"constraint:onDelete:SET NULL" json:"products"`
 }
 
 func (m *Category) Create() error {
@@ -53,30 +48,4 @@ func (m *Category) ReadAll() (bool, []Category) {
 		return false, Categorys
 	}
 	return true, Categorys
-}
-
-func (u *Category) AfterCreate(tx *gorm.DB) (err error) {
-	s := Settings{Setting: "last_card_no"}
-	s.Read()
-	lastNo, _ := strconv.Atoi(s.Value)
-	available := false
-	nextCardNo := ""
-
-	for available == false {
-		nextCardNo = strings.TrimLeft(fmt.Sprintf("H%04v", lastNo+1), " ")
-
-		// check existing
-		var check []Category
-		tx.Model(u).Find(&check, "card_no='"+nextCardNo+"'")
-		if len(check) > 0 {
-			lastNo++
-			continue
-		}
-
-		available = true
-		tx.Model(u).Update("card_no", nextCardNo)
-		tx.Model(s).Update("value", lastNo+1)
-	}
-
-	return
 }

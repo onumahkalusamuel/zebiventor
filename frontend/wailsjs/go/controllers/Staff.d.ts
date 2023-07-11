@@ -7,6 +7,8 @@ export function Create(arg1:controllers.CreateStaffRequest):Promise<{[key: strin
 
 export function Delete(arg1:string):Promise<{[key: string]: any}>;
 
+export function ReadAll(arg1:controllers.StaffSearchParams):Promise<Array<models.Staff>>;
+
 export function ReadOne(arg1:string):Promise<models.Staff>;
 
 export function ReadProfile():Promise<models.Staff>;

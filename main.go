@@ -18,6 +18,9 @@ func main() {
 	general := controllers.GeneralApp()
 	staff := controllers.StaffApp()
 	sales := controllers.SalesApp()
+	products := controllers.ProductApp()
+	customers := controllers.CustomersApp()
+	categories := controllers.CategoryApp()
 
 	// Create application with options
 	err := wails.Run(&options.App{
@@ -34,6 +37,9 @@ func main() {
 			general,
 			staff,
 			sales,
+			products,
+			customers,
+			categories,
 		},
 	})
 

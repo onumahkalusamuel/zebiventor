@@ -6,6 +6,7 @@ require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/google/uuid v1.1.2
+	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/echo/v4 v4.9.0
 	github.com/wailsapp/wails/v2 v2.5.1
 	golang.org/x/crypto v0.6.0

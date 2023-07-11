@@ -93,7 +93,7 @@ type SetupRequest struct {
 	Address string `json:"address"`
 	Email   string `json:"email"`
 	Phone   string `json:"phone"`
-	Logo    string `json:"logo"`
+	// Logo    string `json:"logo"`
 }
 
 func (g *General) Setup(setupRequest *SetupRequest) map[string]interface{} {
@@ -103,12 +103,16 @@ func (g *General) Setup(setupRequest *SetupRequest) map[string]interface{} {
 
 	if check.Value != "" {
 		return echo.Map{
+			"code":    1,
+			"success": false,
 			"message": " record already setup.",
 		}
 	}
 
 	if setupRequest.Name == "" || setupRequest.Address == "" {
 		return echo.Map{
+			"code":    2,
+			"success": false,
 			"message": "Please provide valid details - 2",
 		}
 	}
@@ -135,12 +139,16 @@ func (g *General) Setup(setupRequest *SetupRequest) map[string]interface{} {
 	setting.UpdateSingle("Value", setupRequest.Phone)
 
 	// image
-	setting = &models.Settings{Setting: "logo"}
-	setting.Read()
-	setting.UpdateSingle("Value", setupRequest.Logo)
+	// setting = &models.Settings{Setting: "logo"}
+	// setting.Read()
+	// setting.UpdateSingle("Value", setupRequest.Logo)
 
 	// return
-	return echo.Map{"message": " record updated successfully."}
+	return echo.Map{
+		"code":    3,
+		"success": true,
+		"message": " record updated successfully.",
+	}
 }
 
 // Details
@@ -194,6 +202,7 @@ func (g *General) GetActivationCode(activationRequest *ActivationRequest) map[st
 	if len(activationRequest.InstallationCode) < 10 {
 		return echo.Map{
 			"code":    3,
+			"success": false,
 			"message": "Invalid installation code",
 		}
 	}
@@ -201,6 +210,7 @@ func (g *General) GetActivationCode(activationRequest *ActivationRequest) map[st
 	activationCode := pkg.GenActivationCode(activationRequest.InstallationCode)
 
 	return echo.Map{
+		"success":         true,
 		"activation_code": activationCode,
 	}
 }
@@ -218,13 +228,16 @@ func (g *General) CreateAdmin(createAdminRequest *CreateAdminRequest) map[string
 
 	if checkadmin.ID != "" {
 		return echo.Map{
+			"code":    1,
+			"success": false,
 			"message": "Admin user already exist.",
 		}
 	}
 
 	if createAdminRequest.Name == "" || createAdminRequest.Password == "" {
 		return echo.Map{
-			"code":    5,
+			"code":    2,
+			"success": false,
 			"message": "Please provide valid details",
 		}
 	}
@@ -239,12 +252,13 @@ func (g *General) CreateAdmin(createAdminRequest *CreateAdminRequest) map[string
 
 	if err := admin.Create(); err != nil {
 		return echo.Map{
-			"code":    5,
+			"code":    3,
+			"success": false,
 			"message": "Error occured: " + err.Error(),
 		}
 	}
 
-	return echo.Map{"message": "Admin created successfully."}
+	return echo.Map{"success": true, "message": "Admin created successfully."}
 }
 
 // activate
@@ -259,6 +273,7 @@ func (g *General) Activate(activateRequest ActivateRequest) map[string]interface
 
 	if len(installationCode) < 10 || len(activationCode) != 14 || activationCode != checkActivationCode {
 		return echo.Map{
+			"success": false,
 			"message": "Invalid activation code",
 		}
 	}
@@ -272,6 +287,12 @@ func (g *General) Activate(activateRequest ActivateRequest) map[string]interface
 	config.ActivationCode = activationCode
 
 	return echo.Map{
+		"success": true,
 		"message": "System activated successfully.",
 	}
+}
+
+// Check login
+func (g *General) CheckLogin() config.LoggedInStruct {
+	return config.LoggedIn
 }

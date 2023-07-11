@@ -37,4 +37,16 @@ func InitialData() {
 			s.Create()
 		}
 	}
+
+	c := &models.Customer{}
+
+	config.DB.Find(&c).First(&c)
+	if c.ID == "" {
+		c = &models.Customer{
+			Name:         "Guest User",
+			Email:        "quest@guest.com",
+			CustomerCode: "GUEST",
+		}
+		config.DB.Create(&c)
+	}
 }
