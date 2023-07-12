@@ -90,7 +90,7 @@ const salesFor = ref('today');
                 </td>
               </tr>
               <tr v-if="!sales.length">
-              <td class="text-center py-5 px-2 border-[1px] border-yellow-600" colspan="5">No records found.</td>
+              <td class="text-center py-5 px-2 border-[1px] border-yellow-600" colspan="6">No records found.</td>
               </tr>
             </tbody>
           </table>

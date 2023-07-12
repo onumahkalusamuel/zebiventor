@@ -267,7 +267,7 @@ const updateCartWithelected = () => {
               </button>
             </div>
           </div>
-          <div class=" overflow-scroll no-scrollbar pr-1">
+          <div class="pr-1">
             <table class="table-auto w-full">
               <thead>
                 <tr>
@@ -315,7 +315,7 @@ const updateCartWithelected = () => {
               </tfoot>
             </table>
           </div>
-        <div class="flex justify-between">
+        <div class="flex justify-between py-3 pt-5">
           <div>
             DISCOUNT: 
             <div class="w-[150px]">
