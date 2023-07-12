@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/db"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -25,6 +26,11 @@ func (a *App) startup(ctx context.Context) {
 	db.InitialData()
 	// add context
 	a.ctx = ctx
+}
+
+func (b *App) domReady(ctx context.Context) {
+	runtime.WindowMaximise(ctx)
+	// Add your action here
 }
 
 // Greet returns a greeting for the given name
