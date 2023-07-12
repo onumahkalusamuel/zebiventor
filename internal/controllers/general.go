@@ -89,11 +89,13 @@ func (g *General) Login(loginRequest *LoginRequest) bool {
 
 // Setup
 type SetupRequest struct {
-	Name    string `json:"name"`
-	Address string `json:"address"`
-	Email   string `json:"email"`
-	Phone   string `json:"phone"`
-	// Logo    string `json:"logo"`
+	Name       string `json:"name"`
+	Address    string `json:"address"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	Logo       string `json:"logo"`
+	LogoString string `json:"logo_string"`
+	LogoType   string `json:"logo_type"`
 }
 
 func (g *General) Setup(setupRequest *SetupRequest) map[string]interface{} {
@@ -139,9 +141,66 @@ func (g *General) Setup(setupRequest *SetupRequest) map[string]interface{} {
 	setting.UpdateSingle("Value", setupRequest.Phone)
 
 	// image
-	// setting = &models.Settings{Setting: "logo"}
-	// setting.Read()
-	// setting.UpdateSingle("Value", setupRequest.Logo)
+	if setupRequest.LogoString != "" {
+		setting = &models.Settings{Setting: "logo"}
+		setting.Read()
+		setting.UpdateSingle("Value", setupRequest.LogoString)
+		// fileName, err := helpers.SaveImage(setupRequest.LogoString, setupRequest.LogoType)
+		// if err == nil {
+		// 	setting = &models.Settings{Setting: "logo"}
+		// 	setting.Read()
+		// 	setting.UpdateSingle("Value", fileName)
+		// } else {
+		// 	fmt.Println(err.Error())
+		// }
+	}
+
+	// return
+	return echo.Map{
+		"code":    3,
+		"success": true,
+		"message": " record updated successfully.",
+	}
+}
+
+// update
+func (g *General) UpdateStore(setupRequest *SetupRequest) map[string]interface{} {
+
+	var setting *models.Settings
+	// name
+	setting = &models.Settings{Setting: "name"}
+	setting.Read()
+	setting.UpdateSingle("Value", setupRequest.Name)
+
+	// address
+	setting = &models.Settings{Setting: "address"}
+	setting.Read()
+	setting.UpdateSingle("Value", setupRequest.Address)
+
+	// email
+	setting = &models.Settings{Setting: "email"}
+	setting.Read()
+	setting.UpdateSingle("Value", setupRequest.Email)
+
+	// phone
+	setting = &models.Settings{Setting: "phone"}
+	setting.Read()
+	setting.UpdateSingle("Value", setupRequest.Phone)
+
+	// image
+	if setupRequest.LogoString != "" {
+		setting = &models.Settings{Setting: "logo"}
+		setting.Read()
+		setting.UpdateSingle("Value", setupRequest.LogoString)
+		// fileName, err := helpers.SaveImage(setupRequest.LogoString, setupRequest.LogoType)
+		// if err == nil {
+		// 	setting = &models.Settings{Setting: "logo"}
+		// 	setting.Read()
+		// 	setting.UpdateSingle("Value", fileName)
+		// } else {
+		// 	fmt.Println(err.Error())
+		// }
+	}
 
 	// return
 	return echo.Map{
@@ -187,7 +246,7 @@ func (g *General) StoreDetails() map[string]interface{} {
 	// logo
 	setting = &models.Settings{Setting: "logo"}
 	setting.Read()
-	store["logo"] = "http//localhost:8889/" + setting.Value
+	store["logo"] = setting.Value
 
 	// return
 	return store

@@ -71,7 +71,7 @@ const deleteStaff = async (id: string) => {
       </div>
       </div>
       <div class="w-[50%] border-[1px] border-yellow-600 px-3 p-2">
-        <div class="h-[65vh] overflow-scroll no-scrollbar pr-1">
+        <div class="pr-1">
             <table class="table-auto">
               <thead>
                 <tr>

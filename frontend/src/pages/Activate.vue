@@ -5,7 +5,7 @@ import TextField from '../components/form/TextField.vue';
 import { DocumentDuplicateIcon } from '@heroicons/vue/24/solid'
 import PrimaryButton from '../components/form/PrimaryButton.vue';
 import { toasts } from '../stores/toasts';
-import { Activate, InstallationCode,GetActivationCode } from '../../wailsjs/go/controllers/General'
+import { Activate, InstallationCode, GetActivationCode } from '../../wailsjs/go/controllers/General'
 import { controllers } from '../../wailsjs/go/models'
 const installation_code = ref('');
 const router = useRouter();
@@ -14,8 +14,8 @@ const installationCodeField = ref(null);
 
 onMounted(async() => {
   installation_code.value = await InstallationCode();
-  const activation_code = await GetActivationCode({ installation_code: installation_code.value });
-  form.value.activation_code = activation_code.activation_code
+  // const activation_code = await GetActivationCode({ installation_code: installation_code.value });
+  // form.value.activation_code = activation_code.activation_code
 })
 
 const copyInstallationCode = async () => {

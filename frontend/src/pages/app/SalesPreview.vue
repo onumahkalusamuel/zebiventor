@@ -32,6 +32,9 @@ onMounted(async() => {
     <div class="absolute top-0 left-0 bg-white h-screen w-screen mx-auto hidden" ref="printArea">
       <div class="w-[220px] bg-white text-stone-950 text-[9px] p-[10px] pt-1">
         <div class="text-center">
+          <div class="flex justify-center mb-[5px]">
+            <img :src="store.logo" class="max-w-[50px]" alt="logo">
+          </div>
           <div class="text-[12px]"  style="text-transform:uppercase">{{ store.name }}</div>
           <div>{{ store.address }}</div>
           <div>{{ store.phone }}</div>
@@ -106,10 +109,11 @@ onMounted(async() => {
     <div class="flex justify-between items-center">
       <div class="text-2xl pt-2 pb-4">Sale Preview</div>
       <div>
-        <button @click="print" class="flex items-center border-2 p-2 border-yellow-600 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 active:border-yellow-700">
+        <button @click="print" class="flex items-center border-[1px] p-1 px-2 border-yellow-600 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 active:border-yellow-700">
           <PrinterIcon class="h-5 w-5 mr-2"/>
           <div>PRINT</div>
-        </button></div>
+        </button>
+      </div>
     </div>
     <div class="py-5">
       <div class="flex justify-between space-y-2 flex-wrap">
@@ -142,7 +146,7 @@ onMounted(async() => {
 
     <div class="text-xl py-4">Packing List</div>
     <div class="flex">
-      <div class="w-full border-[1px] border-yellow-600 px-3 p-2 h-[50vh] overflow-scroll no-scrollbar">
+      <div class="w-full border-[1px] border-yellow-600 px-3 p-2">
         <div class="">
             <table class="table-auto w-full">
               <thead>

@@ -43,34 +43,35 @@ const deleteCategory = async (id: string) => {
   <div class="p-[15px]">
     <div class="text-2xl pt-2 pb-4">Categories</div>
     <div></div>
-    <div class="flex">
-      <div class="w-[50%] border-[1px] border-yellow-600 px-3 p-2 mr-[10px] ">
+    <div class="">
+      <div class="border-[1px] border-yellow-600 px-3 p-2 mb-[10px]">
         <h1 class="mt-3">Add Category</h1>
         <div class="my-4">
-          <form @submit.prevent="addCategory" class="space-y-5">
-            <div>
+          <form @submit.prevent="addCategory" class="space-x-2 flex w-full">
+            <div class="flex-1">
               <TextField v-model="category.name" placeholder="Category Name" class="bg-stone-800 text-center border-[1px] border-yellow-600" required/>
             </div>
-            <div>
+            <div class="w-[200px]">
               <PrimaryButton type="submit">Submit</PrimaryButton>
             </div>
           </form>
       </div>
       </div>
-      <div class="w-[50%] border-[1px] border-yellow-600 px-3 p-2">
-        <div class="h-[65vh] overflow-scroll no-scrollbar pr-1">
+      <div class="border-[1px] border-yellow-600 px-3 p-2">
+        <h1 class="mt-3">Category List</h1>
+        <div class="pr-1 my-4">
             <table class="table-auto w-full">
               <thead>
                 <tr>
-                  <th class="border-[1px] border-yellow-600 px-3">S/N</th>
-                  <th class="border-[1px] border-yellow-600 px-3">NAME</th>
+                  <th class="border-[1px] border-yellow-600 px-3 w-[100px]">S/N</th>
+                  <th class="border-[1px] border-yellow-600 px-3 w-full">NAME</th>
                   <th class="border-[1px] border-yellow-600 px-3"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="item, key in categories" :key="key">
-                  <td class="border-[1px] border-yellow-600 text-center w-[100px]">{{ key+1 }}</td>
-                  <td class="border-[1px] border-yellow-600 px-3 ellipsis w-full">{{ item.name }}</td>
+                  <td class="border-[1px] border-yellow-600 text-center">{{ key+1 }}</td>
+                  <td class="border-[1px] border-yellow-600 px-3 ellipsis">{{ item.name }}</td>
                   <td class="border-[1px] border-yellow-600">
                     <button title="Delete item" @click="() => deleteCategory(item.id)" class="border-[1px] w-[50px] border-yellow-600 py-1 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 flex items-center justify-center text-center">
                       <TrashIcon class="w-5 h-5" />

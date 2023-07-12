@@ -1,44 +1,34 @@
 package helpers
 
 import (
-	"io"
+	"encoding/base64"
+	"fmt"
 	"os"
-	"path"
-
-	"github.com/labstack/echo/v4"
 )
 
-func SaveImage(c echo.Context, source string, dest string) (string, error) {
+func SaveImage(logoString string, logoType string) (string, error) {
 
-	file, err := c.FormFile(source)
-	if err != nil {
-		return "", err
-	}
-	src, err := file.Open()
-	if err != nil {
-		return "", err
-	}
-	defer src.Close()
-
-	dirName := path.Join("files", dest)
-	filename := path.Join(dirName, file.Filename)
-
-	// Destination
-	err = os.MkdirAll(dirName, 0755)
+	dec, err := base64.StdEncoding.DecodeString(logoString)
 	if err != nil {
 		return "", err
 	}
 
-	dst, err := os.Create(filename)
+	fileName := fmt.Sprintf("store_logo.%s", logoType)
+	fmt.Println(fileName)
+
+	f, err := os.Create(fileName)
 	if err != nil {
 		return "", err
 	}
-	defer dst.Close()
+	defer f.Close()
 
-	// Copy
-	if _, err = io.Copy(dst, src); err != nil {
+	if _, err := f.Write(dec); err != nil {
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
 		return "", err
 	}
 
-	return filename, nil
+	fmt.Println(fileName)
+	return fileName, nil
 }

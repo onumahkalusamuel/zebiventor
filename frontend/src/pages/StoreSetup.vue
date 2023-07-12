@@ -1,15 +1,15 @@
 <script lang="ts" setup>
 import TextField from '../components/form/TextField.vue';
 import PrimaryButton from '../components/form/PrimaryButton.vue';
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { toasts } from '../stores/toasts';
 import { Setup } from '../../wailsjs/go/controllers/General'
 import { controllers } from '../../wailsjs/go/models'
+import { store } from '../stores';
 
 const router = useRouter();
 const storesetup = ref({address: '', email: '', logo: '', name: '', phone: ''} as controllers.SetupRequest);
-// const logo = ref(null);
 
 const storeSetup = async () => {
   const storeSetup = await Setup(storesetup.value);
@@ -30,7 +30,12 @@ const storeSetup = async () => {
       <TextField v-model="storesetup.address" name="address" placeholder="Physical Address" class="w-full mb-2"/>
       <TextField  v-model="storesetup.email" name="email" placeholder="Email Address" class="w-full mb-2"/>
       <TextField v-model="storesetup.phone" name="phone" placeholder="Phone Number" class="w-full mb-2"/>
-      <!-- <TextField v-model="storesetup.logo" label="Store Logo" name="logo" class="w-full mb-2 font-xl" ref="logo" type="file"/> -->
+      <div>
+        <div class="py-2">Store Logo</div>
+        <div class="border-[1px] border-yellow-600 p-2 pb-1">
+          <input label="Store Logo" class="w-full mb-2 font-xl" ref="logo" type="file" @change="store.getBase64"/>
+        </div>
+      </div>
       <PrimaryButton class="w-full mb-2" type="submit">Submit</PrimaryButton>
     </div>
   </form>

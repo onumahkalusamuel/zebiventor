@@ -146,6 +146,9 @@ export namespace controllers {
 	    address: string;
 	    email: string;
 	    phone: string;
+	    logo: string;
+	    logo_string: string;
+	    logo_type: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SetupRequest(source);
@@ -157,6 +160,9 @@ export namespace controllers {
 	        this.address = source["address"];
 	        this.email = source["email"];
 	        this.phone = source["phone"];
+	        this.logo = source["logo"];
+	        this.logo_string = source["logo_string"];
+	        this.logo_type = source["logo_type"];
 	    }
 	}
 	export class StaffSearchParams {

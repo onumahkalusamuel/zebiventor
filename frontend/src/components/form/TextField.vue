@@ -11,6 +11,8 @@ const props = defineProps<{
   readonly?: boolean;
   step?: string;
   disabled?: boolean;
+  max?: string | number;
+  min?: string | number;
   modelValue?: String | Number
 }>()
 
@@ -30,7 +32,7 @@ const updateValue = (event: any) => {
     <div v-if="$slots.prepend" class="px-2 flex items-center justify-center hover:bg-stone-900">
       <slot name="prepend"></slot>
     </div>
-    <input class="bg-stone-900 h-[28px] w-full py-1 px-2 hover:bg-stone-800 focus:bg-stone-800 focus:outline-none" :name="name" :placeholder="placeholder" :type="type || 'text'" :required="required" :autocomplete="`new-${name}`" :id="name" :value="modelValue" :readonly="readonly" :step="step" :ref="ref" @input="updateValue" :disabled="disabled"/>
+    <input class="bg-stone-900 h-[28px] w-full py-1 px-2 hover:bg-stone-800 focus:bg-stone-800 focus:outline-none" :name="name" :placeholder="placeholder" :type="type || 'text'" :required="required" :autocomplete="`new-${name}`" :id="name" :value="modelValue" :readonly="readonly" :step="step" :ref="ref" @input="updateValue" :disabled="disabled" :max="max" :min="min"/>
     <div v-if="$slots.append" class="px-2 flex items-center justify-center hover:bg-stone-900">
       <slot name="append"></slot>
     </div>

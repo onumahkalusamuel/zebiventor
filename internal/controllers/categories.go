@@ -52,12 +52,20 @@ func (s *Category) Create(name string) map[string]interface{} {
 func (s *Category) Delete(id string) map[string]interface{} {
 	category := &models.Category{}
 	category.ID = id
-	category.Read()
+	db := config.DB.Model(&models.Category{})
+	db.Preload("Products").Find(&category)
 
 	if category.Name == "" {
 		return echo.Map{
 			"success": false,
 			"message": "record not found",
+		}
+	}
+
+	if len(category.Products) > 0 {
+		return echo.Map{
+			"success": false,
+			"message": "Cannot delete category with products. Delete products first.",
 		}
 	}
 

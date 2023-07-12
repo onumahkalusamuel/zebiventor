@@ -33,7 +33,7 @@ interface CartItem {
   qty?: number;
   price?: number;
   total?: number;
-  dirty?: false;
+  stock_quantity?: number;
 }
 
 const customerOptions = ref([] as [string, (string|number)?][]);
@@ -53,7 +53,15 @@ const clearCart = () => {
 }
 const checkout = async () => {
   sale.value.details = [];
-  Object.values(cartItems.value).forEach((item) => {
+  let overQty = [] as string[];
+
+  const cartKeys = Object.keys(cartItems.value);
+
+  Object.values(cartItems.value).forEach((item, index) => {
+    if((item.qty as number) > (item.stock_quantity as number)) {
+      overQty.push(`(${item.name} => from ${item.qty} to ${item.stock_quantity})`)
+      cartItems.value[cartKeys[index]].qty = cartItems.value[cartKeys[index]].stock_quantity
+    }
     if((item.qty as number) > 0) {
       sale.value.details.push({
         product_id: item.id || '',
@@ -65,6 +73,11 @@ const checkout = async () => {
       });
     }
   });
+ 
+  if(overQty.length > 0) {
+    toasts.addToast({type: 'error', message: `Confirm changes. Quantity adjustment:\n ${overQty.join("\n")}`, })
+    return;
+  }
 
   sale.value.discount_amount = discount.value;
   sale.value.sub_total = subTotal.value;
@@ -89,6 +102,7 @@ const fetchProduct = async (key: string, code: string) => {
     cartItems.value[key].id = product.id;
     cartItems.value[key].price = product.price;
     cartItems.value[key].name = product.name;
+    cartItems.value[key].stock_quantity = product.stock_quantity;
     cartItems.value[key].qty = 1;
   } else {
     toasts.addToast({message: `Product with code "${code}" not found`, type: 'error'});
@@ -117,6 +131,9 @@ const searchForProducts = async () => {
 const addToSelected = (item: models.Product) => (selectedProducts.value = [...selectedProducts.value.filter((p) => p.code!=item.code), item])
 const removeFromSelected = (index: number) => selectedProducts.value.splice(index, 1);
 const updateCartWithelected = () => {
+  
+  if(selectedProducts.value.length === 0) return;
+
   let cartKeys = Object.keys(cartItems.value)
   let cartValues = Object.values(cartItems.value);
 
@@ -145,6 +162,7 @@ const updateCartWithelected = () => {
         id: item.id,
         name: item.name,
         price: item.price,
+        stock_quantity: item.stock_quantity,
         qty: 1,
       };
     }
@@ -228,7 +246,7 @@ const updateCartWithelected = () => {
   </GDialog>
   
   <div class="flex flex-col p-[15px]">
-    <div class="text-2xl pt-2 pb-4">Quick Sale</div>
+    <div class="text-2xl pt-2 pb-4">New Sale</div>
     <div class="flex flex-1">
       <div class="flex-1 border-[1px] border-yellow-600 px-3 p-2 mr-[10px]">
         <div class="">
@@ -271,9 +289,9 @@ const updateCartWithelected = () => {
                       </button>
                     </div>
                   </td>
-                  <td class="border-[1px] border-yellow-600 px-3 ellipsis">{{ item.name }}</td>
+                  <td class="border-[1px] border-yellow-600 px-3 ellipsis"><span v-if="item.name">{{ item.name }} ({{ (item.stock_quantity || 0).toLocaleString("en-US") }} available)</span></td>
                   <td class="border-[1px] border-yellow-600 w-[100px]">
-                    <TextField class="w-[100px] bg-stone-800 text-center border-[1px] border-yellow-600" v-model.number="item.qty" type="number" :disabled="!item.id" />
+                    <TextField class="w-[100px] bg-stone-800 text-center border-[1px] border-yellow-600" v-model.number="item.qty" type="number" :disabled="!item.id" :max="item.stock_quantity" />
                   </td>
                   <td class="border-[1px] border-yellow-600 w-[120px]">
                     <TextField class="w-[120px] bg-stone-800 text-center border-[1px] border-yellow-600" v-model.number="item.price" type="number" :disabled="!item.id" />
@@ -281,8 +299,8 @@ const updateCartWithelected = () => {
                   <td class="border-[1px] border-yellow-600 px-3 text-right w-[140px]">
                       {{ ((item.qty || 0) * (item.price || 0)).toLocaleString("en-US") }}
                   </td>
-                  <td class="border-[1px] border-yellow-600 w-[100px]">
-                    <button title="Delete item" @click="() => removeFromCart(`${key}`)" class="border-[1px] w-[100px] border-yellow-600 px-3 py-1 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 flex items-center justify-center text-center">  
+                  <td class="border-[1px] border-yellow-600 w-[50px]">
+                    <button title="Delete item" @click="() => removeFromCart(`${key}`)" class="border-[1px] w-[50px] border-yellow-600 py-1 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 flex items-center justify-center text-center">  
                       <TrashIcon class="w-5 h-5" />
                     </button>
                   </td>

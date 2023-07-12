@@ -20,3 +20,5 @@ export function Login(arg1:controllers.LoginRequest):Promise<boolean>;
 export function Setup(arg1:controllers.SetupRequest):Promise<{[key: string]: any}>;
 
 export function StoreDetails():Promise<{[key: string]: any}>;
+
+export function UpdateStore(arg1:controllers.SetupRequest):Promise<{[key: string]: any}>;

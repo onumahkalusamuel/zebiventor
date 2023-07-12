@@ -1,10 +1,9 @@
 <script lang="ts" setup>
 import { auth, toasts } from '../../stores';
-import { TrashIcon, ArrowRightIcon, EyeIcon } from '@heroicons/vue/24/solid';
+import { TrashIcon, ShoppingBagIcon, EyeIcon } from '@heroicons/vue/24/solid';
 import { computed, onMounted, ref } from 'vue';
 import { ReadAll, Delete } from '../../../wailsjs/go/controllers/Sales'
 import { models } from '../../../wailsjs/go/models';
-import { user } from '../../stores/user';
 
 const sales = ref([] as Array<models.Sale>);
 
@@ -31,7 +30,15 @@ const salesFor = ref('today');
 
 <template>
   <div class="p-[15px]">
-    <div class="text-2xl pt-2 pb-4">Sales</div>
+    <div class="flex justify-between items-center mb-4">
+      <div class="text-2xl pt-2">Sales</div>
+      <div>
+        <router-link :to="{name:'dashboard'}" class="flex items-center border-[1px] p-1 px-2 border-yellow-600 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 active:border-yellow-700">
+          <ShoppingBagIcon class="h-5 w-5 mr-2"/>
+          <div>New Sale</div>
+        </router-link>
+      </div>
+    </div>
       <div class="flex space-x-4 my-4 items-center hidden">
         <div>SHOW SALES FOR: </div>
         <label class="border-2 px-2 py-1 cursor-pointer border-yellow-600" :class="salesFor=='today'?'bg-yellow-600 text-stone-950':''">
@@ -49,11 +56,12 @@ const salesFor = ref('today');
       </div>
 
     <div class="w-full border-[1px] border-yellow-600 px-3 p-2">
-      <div class="h-[65vh] overflow-scroll no-scrollbar pr-1">
+      <div class="pr-1">
           <table class="table-auto w-full">
             <thead>
               <tr>
                 <th class="border-[1px] border-yellow-600 px-3">S/N</th>
+                <th class="border-[1px] border-yellow-600 px-3 w-[150px]">DATE</th>
                 <th class="border-[1px] border-yellow-600 px-3">CUSTOMER</th>
                 <th class="border-[1px] border-yellow-600 px-3 w-[150px]">GRAND TOTAL</th>
                 <th class="border-[1px] border-yellow-600 px-3 w-[150px]">PAYMENT</th>
@@ -63,6 +71,7 @@ const salesFor = ref('today');
             <tbody>
               <tr v-for="item, key in sales" :key="key">
                 <td class="border-[1px] border-yellow-600 text-center w-[100px]">{{ key+1 }}</td>
+                <td class="border-[1px] border-yellow-600 px-3 text-center">{{ (item?.created_at|| '').split('T')[0] }}</td>
                 <td class="border-[1px] border-yellow-600 px-3 ellipsis">{{ item?.customer?.name }} ({{ item?.customer?.customer_code }})</td>
                 <td class="border-[1px] border-yellow-600 px-3">{{ item?.grand_total }}</td>
                 <td class="border-[1px] border-yellow-600 px-3">

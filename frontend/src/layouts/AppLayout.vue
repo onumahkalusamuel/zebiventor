@@ -6,7 +6,8 @@ import {
   UsersIcon,
   SparklesIcon,
   UserGroupIcon,
-  BellAlertIcon,
+  Cog8ToothIcon,
+  ShoppingBagIcon,
   Square3Stack3DIcon,
   LockClosedIcon,
 } from '@heroicons/vue/24/outline';
@@ -36,41 +37,38 @@ const logout = async () => {
   <div class="flex flex-col h-screen bg-stone-950 text-yellow-600">
     <header class="w-full flex toolbar bg-yellow-600 h-[40px] text-stone-950 justify-between">
       <div class="flex">
-        <a class="header-icon-link flex w-[48px] hover:bg-yellow-700">
-          <SparklesIcon class="h-6 w-6" />
-        </a>
         <router-link class="header-icon-link font-bold text-[18px] px-3 hover:bg-yellow-700" :to="{name: 'dashboard'}">
-          {{ store.name }}
+          <SparklesIcon class="h-6 w-6 mr-2" />
+          {{ store.name }} <small class="opacity-[.7]">&nbsp[{{ auth.username }}]</small>
         </router-link>   
       </div>
       <div style="display:flex; flex: 0 0 auto">
-        <router-link title="Staff" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'staff'}">
+        <router-link title="Staff" class="header-icon-link px-3 hover:bg-yellow-700" :to="{name: 'staff'}">
           <users-icon class="h-5 w-5"/>
           <span class="pl-2 hidden lg:block">Staff</span>
         </router-link>
-        <router-link title="Customers" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'customers'}">
+        <router-link title="Customers" class="header-icon-link px-3 hover:bg-yellow-700" :to="{name: 'customers'}">
           <user-group-icon class="h-5 w-5"/>
           <span class="pl-2 hidden lg:block">Customers</span>
         </router-link>
-        <router-link title="Categories" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'categories'}">
+        <router-link title="Categories" class="header-icon-link px-3 hover:bg-yellow-700" :to="{name: 'categories'}">
           <list-bullet-icon class="h-5 w-5"/>
           <span class="pl-2 hidden lg:block">Categories</span>
         </router-link>
-        <router-link title="Products" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'products'}">
+        <router-link title="Products" class="header-icon-link px-3 hover:bg-yellow-700" :to="{name: 'products'}">
           <square3-stack3-d-icon class="h-5 w-5"/>
           <span class="pl-2 hidden lg:block">Products</span>
         </router-link>
-        <router-link title="Sales" class="header-icon-link px-4 hover:bg-yellow-700" :to="{name: 'sales'}">
-          <bell-alert-icon class="h-5 w-5"/>
+        <router-link title="Sales" class="header-icon-link px-3 hover:bg-yellow-700" :to="{name: 'sales'}">
+          <shopping-bag-icon class="h-5 w-5"/>
           <span class="pl-2 hidden lg:block">Sales</span>
         </router-link>
       </div>
       <div class="flex">
-        <a class="header-icon-link hover:bg-yellow-700">
-          <div class="px-3">
-            <div class="avatarmenu-username">[{{ auth.username }}]</div>
-          </div>
-        </a>
+        <router-link title="Settings" class="header-icon-link px-3 hover:bg-yellow-700" :to="{name: 'settings'}">
+          <cog8-tooth-icon class="h-5 w-5"/>
+          <span class="pl-2 hidden lg:block">Settings</span>
+        </router-link>
         <a class="header-icon-link px-3 hover:bg-yellow-700" @click="logout">
           <lock-closed-icon class="h-5 w-5 mr-2"/>
           <span>Logout</span>

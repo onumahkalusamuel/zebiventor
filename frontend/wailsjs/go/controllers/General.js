@@ -37,3 +37,7 @@ export function Setup(arg1) {
 export function StoreDetails() {
   return window['go']['controllers']['General']['StoreDetails']();
 }
+
+export function UpdateStore(arg1) {
+  return window['go']['controllers']['General']['UpdateStore'](arg1);
+}

@@ -42,9 +42,9 @@ const login = async () => {
     <div class="bg-[url('assets/images/login-image.jpg')] bg-cover bg-no-repeat flex-1"></div>
     <div class="p-5 flex flex-col min-w-[400px] max-w-[450px] min-h-[85vh] justify-between mx-auto sm:py-10">
       <div class="flex justify-between items-center">
-        <div class="w-full">
+        <div class="w-full pr-2">
           <div class="text-2xl">{{ storeDetails.name }}</div>
-          <div v-if="storeDetails.address" class="mt-1">{{ storeDetails.address }}</div>
+          <div v-if="storeDetails.address" class="mt-1 text-sm">{{ storeDetails.address }}</div>
         </div>
         <div class="logo">
           <img :src="storeDetails.logo" class="max-w-[70px]" alt="logo">

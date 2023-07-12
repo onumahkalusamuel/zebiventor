@@ -12,26 +12,12 @@ import Login from '../pages/Login.vue';
 import Dashboard from '../pages/app/Dashboard.vue';
 import Categories from '../pages/app/Categories.vue';
 import Products from '../pages/app/Products.vue';
+import UpdateProduct from '../pages/app/UpdateProduct.vue';
 import Sales from '../pages/app/Sales.vue';
 import SalesPreview from '../pages/app/SalesPreview.vue';
 import Customers from '../pages/app/Customers.vue';
 import Staff from '../pages/app/Staff.vue';
-
-// import Patients from '../pages/app/patients/Index.vue';
-// import AddPatient from '../pages/app/patients/Add.vue';
-// import ViewPatient from '../pages/app/patients/View.vue';
-// import NextOfKin from '../pages/app/patients/NextOfKin.vue';
-// import PatientHistory from '../pages/app/patients/HistoryIndex.vue';
-// import PatientHistoryAdd from '../pages/app/patients/HistoryAdd.vue';
-// import PatientHistoryView from '../pages/app/patients/HistoryView.vue';
-
-// import Deliveries from '../pages/app/deliveries/Index.vue';
-// import AddDelivery from '../pages/app/deliveries/Add.vue';
-// import ViewDelivery from '../pages/app/deliveries/View.vue';
-
-// import Staff from '../pages/app/staff/Index.vue';
-// import AddStaff from '../pages/app/staff/Add.vue';
-// import ViewStaff from '../pages/app/staff/View.vue';
+import Settings from '../pages/app/Settings.vue';
 
 export const routes: RouteRecordRaw[] = [
   {
@@ -48,10 +34,12 @@ export const routes: RouteRecordRaw[] = [
       { path: 'dashboard', component: Dashboard, name: 'dashboard' },
       { path: 'categories', component: Categories, name: 'categories' },
       { path: 'products', component: Products, name: 'products' },
+      { path: 'products/:id', component: UpdateProduct, name: 'update-product' },
       { path: 'sales', component: Sales, name: 'sales' },
       { path: 'sales-preview/:id', component: SalesPreview, name: 'sales-preview' },
       { path: 'customers', component: Customers, name: 'customers' },
       { path: 'staff', component: Staff, name: 'staff' },
+      { path: 'settings', component: Settings, name: 'settings' },
       { path: ':pathMatch(.*)', redirect: { name: 'dashboard' } },
     ]
   },

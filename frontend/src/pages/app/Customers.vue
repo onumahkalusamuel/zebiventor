@@ -73,7 +73,7 @@ const deleteCustomer = async (id: string) => {
       </div>
       </div>
       <div class="w-[50%] border-[1px] border-yellow-600 px-3 p-2">
-        <div class="h-[65vh] overflow-scroll no-scrollbar pr-1">
+        <div class="">
             <table class="table-auto w-full">
               <thead>
                 <tr>
@@ -89,7 +89,7 @@ const deleteCustomer = async (id: string) => {
                   <td class="border-[1px] border-yellow-600 px-3 w-[100px] ellipsis">{{ item.customer_code }}</td>
                   <td class="border-[1px] border-yellow-600 px-3 ellipsis">{{ item.name }}</td>
                   <td class="border-[1px] border-yellow-600">
-                    <button title="Delete item" @click="() => deleteCustomer(item.id)" class="border-[1px] w-[50px] border-yellow-600 px-3 py-1 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 flex items-center justify-center text-center">
+                    <button v-if="item.customer_code!='GUEST'" title="Delete item" @click="() => deleteCustomer(item.id)" class="border-[1px] w-[50px] border-yellow-600 px-3 py-1 hover:bg-yellow-600 hover:text-stone-950 active:bg-yellow-700 flex items-center justify-center text-center">
                       <TrashIcon class="w-5 h-5" />
                     </button>
                   </td>

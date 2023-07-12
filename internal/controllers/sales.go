@@ -46,7 +46,7 @@ func (s *Sales) Create(sales *models.Sale) map[string]interface{} {
 	for _, details := range sales.Details {
 
 		product := &models.Product{}
-		product.Code = details.ProductCode
+		product.ID = details.ProductID
 		config.DB.Model(&models.Product{}).First(&product)
 
 		if product.ID == "" {
@@ -55,7 +55,7 @@ func (s *Sales) Create(sales *models.Sale) map[string]interface{} {
 
 		product.StockQuantity = product.StockQuantity - details.Qty
 
-		config.DB.Updates(product)
+		config.DB.Save(product)
 	}
 
 	return echo.Map{
@@ -101,17 +101,11 @@ func (s *Sales) ReadAll(searchParam *SalesSearch) []models.Sale {
 
 	db := config.DB.Model(&models.Sale{})
 
-	// if balance := c.QueryParam("balance"); balance == "true" {
-	// 	db.Where("balance > 0")
-	// } else if balance == "false" {
-	// 	db.Where("balance == 0")
-	// } else {
-	// 	db.Order("balance DESC, created_at ASC")
-	// }
-
 	if searchParam.CustomerID != "" {
 		db.Where("customer_id = '" + searchParam.CustomerID + "'")
 	}
+
+	db.Order("created_at DESC")
 
 	db.Preload("Customer").Find(&sales)
 
@@ -125,5 +119,3 @@ func (s *Sales) ReadOne(id string) *models.Sale {
 	db.Preload("Customer").First(&sale)
 	return sale
 }
-
-func ProcessStockDeductions() {}
