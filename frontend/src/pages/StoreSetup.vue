@@ -31,7 +31,7 @@ const storeSetup = async () => {
       <div>
         <div class="py-2">Store Logo</div>
         <div class="border-[1px] border-yellow-600 p-2 pb-1">
-          <input label="Store Logo" class="w-full mb-2 font-xl" ref="logo" type="file" @change="store.getBase64"/>
+          <input label="Store Logo" class="w-full mb-2 font-xl" type="file" @change="store.getBase64"/>
         </div>
       </div>
       <PrimaryButton class="w-full mb-2" type="submit">Submit</PrimaryButton>

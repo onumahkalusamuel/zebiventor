@@ -89,7 +89,7 @@ const checkout = async () => {
       toasts.addToast({message: makeSales.message, type: 'error'});
       return;
     }
-    toasts.addToast({message: "Sales  completed.", type: 'success'});
+    // toasts.addToast({message: "Sales  completed.", type: 'success'});
     // redirect
     router.push({ name: 'sales-preview', params: {id: makeSales.id }});
 }
