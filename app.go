@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"github.com/onumahkalusamuel/zebiventor/config"
+	"github.com/onumahkalusamuel/zebiventor/internal/controllers"
 	"github.com/onumahkalusamuel/zebiventor/internal/db"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -21,11 +24,17 @@ func NewApp() *App {
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
+	// add context
+	a.ctx = ctx
+	// create folders
+	os.Mkdir(config.AppDataFolder, 0755)
+	os.Mkdir(config.FilesFolder, 0755)
 	// setup the database
 	db.Init()
 	db.InitialData()
-	// add context
-	a.ctx = ctx
+	var gen = controllers.GeneralApp()
+	details := gen.StoreDetails()
+	runtime.WindowSetTitle(a.ctx, fmt.Sprintf("%v - %v - %v", details["name"].(string), config.AppName, config.AppVersion))
 }
 
 func (b *App) domReady(ctx context.Context) {
@@ -33,7 +42,14 @@ func (b *App) domReady(ctx context.Context) {
 	// Add your action here
 }
 
-// Greet returns a greeting for the given name
-func (a *App) Greet(name string) string {
-	return fmt.Sprintf("Hello %s, It's show time!", name)
+// beforeClose is called when the application is about to quit,
+// either by clicking the window close button or calling runtime.Quit.
+// Returning true will cause the application to continue, false will continue shutdown as normal.
+func (a *App) beforeClose(ctx context.Context) (prevent bool) {
+	return false
+}
+
+// shutdown is called at application termination
+func (a *App) shutdown(ctx context.Context) {
+	// Perform your teardown here
 }

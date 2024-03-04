@@ -1,6 +1,9 @@
 package config
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/denisbrodbeck/machineid"
 	"gorm.io/gorm"
 )
@@ -54,3 +57,11 @@ const (
 )
 
 type BodyStructure map[string]string
+
+var AppDataFolder = fmt.Sprintf("%v/%v", os.Getenv("APPDATA"), "Zebiventor")
+var DatabaseFile = fmt.Sprintf("%v/%v", AppDataFolder, "zebiventor.appdb")
+var FilesFolder = fmt.Sprintf("%v/%v", AppDataFolder, "files")
+
+var AppVersion = "1.0.0"
+var AppName = "ZebiVentor"
+var ShopName = "Shop Name"
