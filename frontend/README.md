@@ -1,23 +1,32 @@
-# Vue 3 + TypeScript + Vite
+# React + TypeScript + Vite
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue
-3 `<script setup>` SFCs, check out
-the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## Recommended IDE Setup
+Currently, two official plugins are available:
 
-- [VS Code](https://code.visualstudio.com/) + [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar)
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-## Type Support For `.vue` Imports in TS
+## React Compiler
 
-Since TypeScript cannot handle type information for `.vue` imports, they are shimmed to be a generic Vue component type
-by default. In most cases this is fine if you don't really care about component prop types outside of templates.
-However, if you wish to get actual prop types in `.vue` imports (for example to get props validation when using
-manual `h(...)` calls), you can enable Volar's Take Over mode by following these steps:
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-1. Run `Extensions: Show Built-in Extensions` from VS Code's command palette, look
-   for `TypeScript and JavaScript Language Features`, then right click and select `Disable (Workspace)`. By default,
-   Take Over mode will enable itself if the default TypeScript extension is disabled.
-2. Reload the VS Code window by running `Developer: Reload Window` from the command palette.
+## Expanding the Oxlint configuration
 
-You can learn more about Take Over mode [here](https://github.com/johnsoncodehk/volar/discussions/471).
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
+```
+
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
