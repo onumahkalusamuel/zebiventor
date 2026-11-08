@@ -234,7 +234,7 @@ function PrinterSettings() {
 
 // ---------- store ----------
 
-const storeKeys = ["store_name", "business_type", "store_address", "store_phone", "store_email", "tax_id", "currency_code", "currency_symbol", "receipt_header", "receipt_footer"]
+const storeKeys = ["store_name", "business_type", "store_address", "store_phone", "store_email", "tax_id", "currency_code", "currency_symbol", "receipt_header", "receipt_footer", "tax_mode", "tax_name"]
 
 function StoreSettings() {
   const state = useLoadedState()
@@ -289,6 +289,24 @@ function StoreSettings() {
           {field("tax_id", "Tax ID (TIN)")}
           {field("currency_code", "Currency code")}
           {field("currency_symbol", "Currency symbol")}
+        </div>
+      </Section>
+      <Section title="Tax" description="Each product has its own rate (Products → edit). Changing this affects new sales only.">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>How prices include tax</Label>
+            <Select value={v.tax_mode || "none"} onValueChange={(x) => set("tax_mode", x)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No tax</SelectItem>
+                <SelectItem value="inclusive">Prices include tax (shown on receipt)</SelectItem>
+                <SelectItem value="exclusive">Tax is added at the till</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {field("tax_name", "Tax name", { placeholder: "VAT" })}
         </div>
       </Section>
       <Section title="Receipt text" description="Shown on every printed receipt.">

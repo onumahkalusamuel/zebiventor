@@ -27,6 +27,9 @@ func (h *Hub) SaveProduct(ctx context.Context, by *Session, in protocol.ProductI
 	}
 	p := in.Product
 	p.Name = strings.TrimSpace(p.Name)
+	if p.TaxRateBP < 0 || p.TaxRateBP > 10000 {
+		return "", invalid("tax rate must be between 0%% and 100%%")
+	}
 	if p.Name == "" {
 		return "", invalid("product name is required")
 	}
@@ -381,6 +384,7 @@ func upsertPaymentMethod(ctx context.Context, tx *sql.Tx, m protocol.PaymentMeth
 var editableSettings = map[string]bool{
 	"store_name": true, "business_type": true, "store_address": true, "store_phone": true, "store_email": true,
 	"tax_id": true, "currency_code": true, "currency_symbol": true, "receipt_header": true, "receipt_footer": true,
+	"tax_mode": true, "tax_name": true,
 }
 
 // SaveSettings updates store-wide settings.
@@ -392,6 +396,9 @@ func (h *Hub) SaveSettings(ctx context.Context, by *Session, values map[string]s
 		if !editableSettings[k] {
 			return invalid("setting %q cannot be changed", k)
 		}
+	}
+	if v, ok := values["tax_mode"]; ok && v != protocol.TaxNone && v != protocol.TaxInclusive && v != protocol.TaxExclusive {
+		return invalid("tax mode must be none, inclusive or exclusive")
 	}
 	if v, ok := values["store_name"]; ok && strings.TrimSpace(v) == "" {
 		return invalid("store name cannot be empty")

@@ -81,6 +81,52 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class ApprovalResult {
+	    token: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ApprovalResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.token = source["token"];
+	        this.name = source["name"];
+	    }
+	}
+	export class CloseShiftResult {
+	    shift?: protocol.Shift;
+	    print_error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CloseShiftResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.shift = this.convertValues(source["shift"], protocol.Shift);
+	        this.print_error = source["print_error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class PrinterConfig {
 	    target: printing.Target;
 	    paper: string;
@@ -103,6 +149,40 @@ export namespace main {
 	        this.open_drawer = source["open_drawer"];
 	        this.feed_lines = source["feed_lines"];
 	        this.cut = source["cut"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class ReturnResult {
+	    return?: protocol.Return;
+	    printed: boolean;
+	    print_error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReturnResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.return = this.convertValues(source["return"], protocol.Return);
+	        this.printed = source["printed"];
+	        this.print_error = source["print_error"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -238,6 +318,34 @@ export namespace printing {
 
 export namespace protocol {
 	
+	export class CashMovement {
+	    id: string;
+	    shift_id: string;
+	    kind: string;
+	    amount_minor: number;
+	    reason: string;
+	    user_id: string;
+	    user_name: string;
+	    approved_by: string;
+	    created_at: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new CashMovement(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.shift_id = source["shift_id"];
+	        this.kind = source["kind"];
+	        this.amount_minor = source["amount_minor"];
+	        this.reason = source["reason"];
+	        this.user_id = source["user_id"];
+	        this.user_name = source["user_name"];
+	        this.approved_by = source["approved_by"];
+	        this.created_at = source["created_at"];
+	    }
+	}
 	export class Category {
 	    id: string;
 	    parent_id: string;
@@ -254,6 +362,32 @@ export namespace protocol {
 	        this.parent_id = source["parent_id"];
 	        this.name = source["name"];
 	        this.active = source["active"];
+	    }
+	}
+	export class Customer {
+	    id: string;
+	    name: string;
+	    phone: string;
+	    email: string;
+	    notes: string;
+	    active: boolean;
+	    balance_minor: number;
+	    updated_at: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Customer(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.phone = source["phone"];
+	        this.email = source["email"];
+	        this.notes = source["notes"];
+	        this.active = source["active"];
+	        this.balance_minor = source["balance_minor"];
+	        this.updated_at = source["updated_at"];
 	    }
 	}
 	export class HubInfo {
@@ -278,6 +412,26 @@ export namespace protocol {
 	        this.setup_complete = source["setup_complete"];
 	        this.rev = source["rev"];
 	        this.server_time = source["server_time"];
+	    }
+	}
+	export class MethodTotal {
+	    method_name: string;
+	    kind: string;
+	    sales_minor: number;
+	    refunds_minor: number;
+	    net_minor: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new MethodTotal(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.method_name = source["method_name"];
+	        this.kind = source["kind"];
+	        this.sales_minor = source["sales_minor"];
+	        this.refunds_minor = source["refunds_minor"];
+	        this.net_minor = source["net_minor"];
 	    }
 	}
 	export class PairingCode {
@@ -434,6 +588,105 @@ export namespace protocol {
 	        this.reference = source["reference"];
 	    }
 	}
+	export class ReturnLine {
+	    id: string;
+	    sale_line_id: string;
+	    variant_id: string;
+	    product_name: string;
+	    variant_name: string;
+	    sku: string;
+	    qty_milli: number;
+	    tax_minor: number;
+	    total_minor: number;
+	    restock: boolean;
+	    track_stock: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReturnLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.sale_line_id = source["sale_line_id"];
+	        this.variant_id = source["variant_id"];
+	        this.product_name = source["product_name"];
+	        this.variant_name = source["variant_name"];
+	        this.sku = source["sku"];
+	        this.qty_milli = source["qty_milli"];
+	        this.tax_minor = source["tax_minor"];
+	        this.total_minor = source["total_minor"];
+	        this.restock = source["restock"];
+	        this.track_stock = source["track_stock"];
+	    }
+	}
+	export class Return {
+	    id: string;
+	    return_no: string;
+	    sale_id: string;
+	    sale_receipt_no: string;
+	    terminal_id: string;
+	    location_id: string;
+	    user_id: string;
+	    user_name: string;
+	    approved_by: string;
+	    shift_id: string;
+	    customer_id: string;
+	    customer_name: string;
+	    reason: string;
+	    tax_minor: number;
+	    total_minor: number;
+	    created_at: number;
+	    synced_at: number;
+	    lines: ReturnLine[];
+	    refunds: SalePayment[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Return(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.return_no = source["return_no"];
+	        this.sale_id = source["sale_id"];
+	        this.sale_receipt_no = source["sale_receipt_no"];
+	        this.terminal_id = source["terminal_id"];
+	        this.location_id = source["location_id"];
+	        this.user_id = source["user_id"];
+	        this.user_name = source["user_name"];
+	        this.approved_by = source["approved_by"];
+	        this.shift_id = source["shift_id"];
+	        this.customer_id = source["customer_id"];
+	        this.customer_name = source["customer_name"];
+	        this.reason = source["reason"];
+	        this.tax_minor = source["tax_minor"];
+	        this.total_minor = source["total_minor"];
+	        this.created_at = source["created_at"];
+	        this.synced_at = source["synced_at"];
+	        this.lines = this.convertValues(source["lines"], ReturnLine);
+	        this.refunds = this.convertValues(source["refunds"], SalePayment);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class SaleLine {
 	    id: string;
 	    line_no: number;
@@ -447,6 +700,8 @@ export namespace protocol {
 	    tax_minor: number;
 	    total_minor: number;
 	    track_stock: boolean;
+	    original_price_minor: number;
+	    tax_rate_bp: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new SaleLine(source);
@@ -466,6 +721,8 @@ export namespace protocol {
 	        this.tax_minor = source["tax_minor"];
 	        this.total_minor = source["total_minor"];
 	        this.track_stock = source["track_stock"];
+	        this.original_price_minor = source["original_price_minor"];
+	        this.tax_rate_bp = source["tax_rate_bp"];
 	    }
 	}
 	export class Sale {
@@ -484,6 +741,10 @@ export namespace protocol {
 	    paid_minor: number;
 	    change_minor: number;
 	    note: string;
+	    shift_id: string;
+	    approved_by: string;
+	    customer_name: string;
+	    tax_mode: string;
 	    created_at: number;
 	    synced_at: number;
 	    lines: SaleLine[];
@@ -510,6 +771,10 @@ export namespace protocol {
 	        this.paid_minor = source["paid_minor"];
 	        this.change_minor = source["change_minor"];
 	        this.note = source["note"];
+	        this.shift_id = source["shift_id"];
+	        this.approved_by = source["approved_by"];
+	        this.customer_name = source["customer_name"];
+	        this.tax_mode = source["tax_mode"];
 	        this.created_at = source["created_at"];
 	        this.synced_at = source["synced_at"];
 	        this.lines = this.convertValues(source["lines"], SaleLine);
@@ -535,6 +800,127 @@ export namespace protocol {
 		}
 	}
 	
+	
+	export class ShiftSummary {
+	    sales_count: number;
+	    items_milli: number;
+	    gross_minor: number;
+	    discount_minor: number;
+	    tax_minor: number;
+	    net_sales_minor: number;
+	    returns_count: number;
+	    returns_minor: number;
+	    by_method: MethodTotal[];
+	    opening_float_minor: number;
+	    cash_sales_minor: number;
+	    cash_refunds_minor: number;
+	    paid_in_minor: number;
+	    paid_out_minor: number;
+	    expected_cash_minor: number;
+	    counted_cash_minor: number;
+	    variance_minor: number;
+	    closed: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ShiftSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sales_count = source["sales_count"];
+	        this.items_milli = source["items_milli"];
+	        this.gross_minor = source["gross_minor"];
+	        this.discount_minor = source["discount_minor"];
+	        this.tax_minor = source["tax_minor"];
+	        this.net_sales_minor = source["net_sales_minor"];
+	        this.returns_count = source["returns_count"];
+	        this.returns_minor = source["returns_minor"];
+	        this.by_method = this.convertValues(source["by_method"], MethodTotal);
+	        this.opening_float_minor = source["opening_float_minor"];
+	        this.cash_sales_minor = source["cash_sales_minor"];
+	        this.cash_refunds_minor = source["cash_refunds_minor"];
+	        this.paid_in_minor = source["paid_in_minor"];
+	        this.paid_out_minor = source["paid_out_minor"];
+	        this.expected_cash_minor = source["expected_cash_minor"];
+	        this.counted_cash_minor = source["counted_cash_minor"];
+	        this.variance_minor = source["variance_minor"];
+	        this.closed = source["closed"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Shift {
+	    id: string;
+	    terminal_id: string;
+	    location_id: string;
+	    status: string;
+	    opened_by: string;
+	    opened_by_name: string;
+	    opened_at: number;
+	    opening_float_minor: number;
+	    closed_by: string;
+	    closed_by_name: string;
+	    closed_at: number;
+	    counted_cash_minor: number;
+	    note: string;
+	    summary?: ShiftSummary;
+	
+	    static createFrom(source: any = {}) {
+	        return new Shift(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.terminal_id = source["terminal_id"];
+	        this.location_id = source["location_id"];
+	        this.status = source["status"];
+	        this.opened_by = source["opened_by"];
+	        this.opened_by_name = source["opened_by_name"];
+	        this.opened_at = source["opened_at"];
+	        this.opening_float_minor = source["opening_float_minor"];
+	        this.closed_by = source["closed_by"];
+	        this.closed_by_name = source["closed_by_name"];
+	        this.closed_at = source["closed_at"];
+	        this.counted_cash_minor = source["counted_cash_minor"];
+	        this.note = source["note"];
+	        this.summary = this.convertValues(source["summary"], ShiftSummary);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	
 	export class StockAdjustRequest {
 	    variant_id: string;
@@ -618,6 +1004,7 @@ export namespace terminal {
 	export class CartLine {
 	    variant_id: string;
 	    qty_milli: number;
+	    price_override?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new CartLine(source);
@@ -627,24 +1014,31 @@ export namespace terminal {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.variant_id = source["variant_id"];
 	        this.qty_milli = source["qty_milli"];
+	        this.price_override = source["price_override"];
 	    }
 	}
-	export class DayTotals {
-	    count: number;
+	export class HeldSale {
+	    id: string;
+	    label: string;
+	    user_name: string;
+	    item_count: number;
 	    total_minor: number;
-	    by_method: Record<string, number>;
-	    unsynced: number;
+	    payload: string;
+	    created_at: number;
 	
 	    static createFrom(source: any = {}) {
-	        return new DayTotals(source);
+	        return new HeldSale(source);
 	    }
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.count = source["count"];
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.user_name = source["user_name"];
+	        this.item_count = source["item_count"];
 	        this.total_minor = source["total_minor"];
-	        this.by_method = source["by_method"];
-	        this.unsynced = source["unsynced"];
+	        this.payload = source["payload"];
+	        this.created_at = source["created_at"];
 	    }
 	}
 	export class Item {
@@ -660,6 +1054,7 @@ export namespace terminal {
 	    stock_milli: number;
 	    category_id: string;
 	    attributes: Record<string, string>;
+	    tax_rate_bp: number;
 	    pack_qty_milli: number;
 	
 	    static createFrom(source: any = {}) {
@@ -680,6 +1075,7 @@ export namespace terminal {
 	        this.stock_milli = source["stock_milli"];
 	        this.category_id = source["category_id"];
 	        this.attributes = source["attributes"];
+	        this.tax_rate_bp = source["tax_rate_bp"];
 	        this.pack_qty_milli = source["pack_qty_milli"];
 	    }
 	}
@@ -805,11 +1201,148 @@ export namespace terminal {
 		    return a;
 		}
 	}
+	export class ReturnLineInput {
+	    sale_line_id: string;
+	    qty_milli: number;
+	    restock: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReturnLineInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sale_line_id = source["sale_line_id"];
+	        this.qty_milli = source["qty_milli"];
+	        this.restock = source["restock"];
+	    }
+	}
+	export class ReturnInput {
+	    receipt_no: string;
+	    lines: ReturnLineInput[];
+	    refunds: PaymentInput[];
+	    reason: string;
+	    approval_token: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReturnInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.receipt_no = source["receipt_no"];
+	        this.lines = this.convertValues(source["lines"], ReturnLineInput);
+	        this.refunds = this.convertValues(source["refunds"], PaymentInput);
+	        this.reason = source["reason"];
+	        this.approval_token = source["approval_token"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class ReturnableLine {
+	    id: string;
+	    line_no: number;
+	    variant_id: string;
+	    product_name: string;
+	    variant_name: string;
+	    sku: string;
+	    qty_milli: number;
+	    unit_price_minor: number;
+	    discount_minor: number;
+	    tax_minor: number;
+	    total_minor: number;
+	    track_stock: boolean;
+	    original_price_minor: number;
+	    tax_rate_bp: number;
+	    returned_milli: number;
+	    returnable_milli: number;
+	    paid_minor: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReturnableLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.line_no = source["line_no"];
+	        this.variant_id = source["variant_id"];
+	        this.product_name = source["product_name"];
+	        this.variant_name = source["variant_name"];
+	        this.sku = source["sku"];
+	        this.qty_milli = source["qty_milli"];
+	        this.unit_price_minor = source["unit_price_minor"];
+	        this.discount_minor = source["discount_minor"];
+	        this.tax_minor = source["tax_minor"];
+	        this.total_minor = source["total_minor"];
+	        this.track_stock = source["track_stock"];
+	        this.original_price_minor = source["original_price_minor"];
+	        this.tax_rate_bp = source["tax_rate_bp"];
+	        this.returned_milli = source["returned_milli"];
+	        this.returnable_milli = source["returnable_milli"];
+	        this.paid_minor = source["paid_minor"];
+	    }
+	}
+	export class ReturnableSale {
+	    sale: protocol.Sale;
+	    lines: ReturnableLine[];
+	    source: string;
+	    partial: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReturnableSale(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sale = this.convertValues(source["sale"], protocol.Sale);
+	        this.lines = this.convertValues(source["lines"], ReturnableLine);
+	        this.source = source["source"];
+	        this.partial = source["partial"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SaleInput {
 	    lines: CartLine[];
 	    payments: PaymentInput[];
 	    discount_minor: number;
+	    customer_id: string;
 	    note: string;
+	    approval_token: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SaleInput(source);
@@ -820,7 +1353,9 @@ export namespace terminal {
 	        this.lines = this.convertValues(source["lines"], CartLine);
 	        this.payments = this.convertValues(source["payments"], PaymentInput);
 	        this.discount_minor = source["discount_minor"];
+	        this.customer_id = source["customer_id"];
 	        this.note = source["note"];
+	        this.approval_token = source["approval_token"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -843,8 +1378,10 @@ export namespace terminal {
 	}
 	export class SaleSummary {
 	    id: string;
+	    kind: string;
 	    receipt_no: string;
 	    user_name: string;
+	    customer: string;
 	    total_minor: number;
 	    items: number;
 	    methods: string;
@@ -858,8 +1395,10 @@ export namespace terminal {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.kind = source["kind"];
 	        this.receipt_no = source["receipt_no"];
 	        this.user_name = source["user_name"];
+	        this.customer = source["customer"];
 	        this.total_minor = source["total_minor"];
 	        this.items = source["items"];
 	        this.methods = source["methods"];

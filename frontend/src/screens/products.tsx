@@ -147,6 +147,7 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
   const [allowFraction, setAllowFraction] = useState(product?.allow_fraction ?? false)
   const [trackStock, setTrackStock] = useState(product?.track_stock ?? true)
   const [active, setActive] = useState(product?.active ?? true)
+  const [taxPct, setTaxPct] = useState(product ? String((product.tax_rate_bp ?? 0) / 100) : state.settings.tax_mode && state.settings.tax_mode !== "none" ? "7.5" : "0")
   const [newCategory, setNewCategory] = useState("")
   const [variants, setVariants] = useState<VariantForm[]>(
     product?.variants.map((v) => ({
@@ -171,7 +172,8 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
   }, [attrs.isbn])
 
   const setV = (i: number, patch: Partial<VariantForm>) => setVariants((vs) => vs.map((v, j) => (j === i ? { ...v, ...patch } : v)))
-  const priceErr = variants.some((v) => isNaN(parseMoney(v.price, currency)) || v.price.trim() === "")
+  const priceErr =
+    variants.some((v) => isNaN(parseMoney(v.price, currency)) || v.price.trim() === "") || !(Number(taxPct) >= 0 && Number(taxPct) <= 100)
 
   async function save() {
     setBusy(true)
@@ -190,7 +192,7 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
           unit,
           allow_fraction: allowFraction,
           track_stock: trackStock,
-          tax_rate_bp: product?.tax_rate_bp ?? 0,
+          tax_rate_bp: Math.round((Number(taxPct) || 0) * 100),
           active,
         },
         variants: variants.map((v) => ({
@@ -255,7 +257,11 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
           ))}
         </div>
 
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-5 gap-3">
+          <div className="space-y-1.5">
+            <Label>{state.settings.tax_name || "Tax"} rate %</Label>
+            <Input inputMode="decimal" value={taxPct} onChange={(e) => setTaxPct(e.target.value)} className="text-right tabular" />
+          </div>
           <div className="space-y-1.5">
             <Label>Unit</Label>
             <Select value={unit} onValueChange={setUnit}>

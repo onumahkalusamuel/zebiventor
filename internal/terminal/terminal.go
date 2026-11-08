@@ -218,18 +218,9 @@ var ErrBadLogin = errors.New("incorrect username or password")
 // can sign in while the hub is offline. When the hub is reachable it also
 // opens a hub session used for admin actions.
 func (t *Terminal) Login(ctx context.Context, username, secret string) (User, error) {
-	var u User
-	var pw, pin string
-	var active bool
-	err := t.db.R().QueryRowContext(ctx, `SELECT id,name,username,role,password_hash,pin_hash,active FROM users WHERE username=?`,
-		strings.TrimSpace(username)).Scan(&u.ID, &u.Name, &u.Username, &u.Role, &pw, &pin, &active)
-	if err != nil || !active || secret == "" {
-		return User{}, ErrBadLogin
-	}
-	okPw := pw != "" && bcrypt.CompareHashAndPassword([]byte(pw), []byte(secret)) == nil
-	okPin := !okPw && pin != "" && bcrypt.CompareHashAndPassword([]byte(pin), []byte(secret)) == nil
-	if !okPw && !okPin {
-		return User{}, ErrBadLogin
+	u, err := t.Authenticate(ctx, username, secret)
+	if err != nil {
+		return User{}, err
 	}
 
 	t.mu.Lock()
@@ -246,6 +237,25 @@ func (t *Terminal) Login(ctx context.Context, username, secret string) (User, er
 		} else {
 			t.log.Info("hub session unavailable; continuing offline", "err", err)
 		}
+	}
+	return u, nil
+}
+
+// Authenticate checks credentials against the locally synced users
+// without changing who is signed in (used for manager approvals).
+func (t *Terminal) Authenticate(ctx context.Context, username, secret string) (User, error) {
+	var u User
+	var pw, pin string
+	var active bool
+	err := t.db.R().QueryRowContext(ctx, `SELECT id,name,username,role,password_hash,pin_hash,active FROM users WHERE username=?`,
+		strings.TrimSpace(username)).Scan(&u.ID, &u.Name, &u.Username, &u.Role, &pw, &pin, &active)
+	if err != nil || !active || secret == "" {
+		return User{}, ErrBadLogin
+	}
+	okPw := pw != "" && bcrypt.CompareHashAndPassword([]byte(pw), []byte(secret)) == nil
+	okPin := !okPw && pin != "" && bcrypt.CompareHashAndPassword([]byte(pin), []byte(secret)) == nil
+	if !okPw && !okPin {
+		return User{}, ErrBadLogin
 	}
 	return u, nil
 }

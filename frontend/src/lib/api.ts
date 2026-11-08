@@ -27,7 +27,6 @@ export const api = {
   completeSale: (input: T.SaleInput): Promise<T.SaleResult> => go.CompleteSale(input),
   recentSales: (q: string): Promise<T.SaleSummary[]> => go.RecentSales(q),
   getSale: (id: string): Promise<T.Sale> => go.GetSale(id),
-  todayTotals: (): Promise<T.DayTotals> => go.TodayTotals(),
 
   getPrinterConfig: (): Promise<T.PrinterConfig> => go.GetPrinterConfig(),
   savePrinterConfig: (c: T.PrinterConfig): Promise<void> => go.SavePrinterConfig(c),
@@ -36,7 +35,31 @@ export const api = {
   receiptPreview: (id: string, reprint: boolean): Promise<string> => go.ReceiptPreview(id, reprint),
   testPreview: (c: T.PrinterConfig): Promise<string> => go.TestPreview(c),
   testPrint: (c: T.PrinterConfig): Promise<void> => go.TestPrint(c),
-  openDrawer: (): Promise<void> => go.OpenDrawer(),
+  openDrawer: (approvalToken: string): Promise<void> => go.OpenDrawer(approvalToken),
+
+  approve: (username: string, secret: string): Promise<T.ApprovalResult> => go.Approve(username, secret),
+
+  lookupForReturn: (receipt: string): Promise<T.ReturnableSale> => go.LookupForReturn(receipt),
+  completeReturn: (input: T.ReturnInput): Promise<T.ReturnResult> => go.CompleteReturn(input),
+  returnPreview: (id: string, reprint: boolean): Promise<string> => go.ReturnPreview(id, reprint),
+  printReturn: (id: string, reprint: boolean): Promise<void> => go.PrintReturn(id, reprint),
+
+  currentShift: (): Promise<T.Shift | null> => go.CurrentShift(),
+  openShift: (floatMinor: number): Promise<T.Shift> => go.OpenShift(floatMinor),
+  cashMovement: (kind: "paid_in" | "paid_out", amountMinor: number, reason: string, approvalToken: string): Promise<void> =>
+    go.CashMovement(kind, amountMinor, reason, approvalToken),
+  shiftMovements: (shiftId: string): Promise<T.CashMovement[]> => go.ShiftMovements(shiftId),
+  closeShift: (countedMinor: number, note: string): Promise<{ shift: T.Shift; print_error: string }> => go.CloseShift(countedMinor, note),
+  listShifts: (): Promise<T.Shift[]> => go.ListShifts(),
+  shiftPreview: (id: string): Promise<string> => go.ShiftPreview(id),
+  printShift: (id: string): Promise<void> => go.PrintShift(id),
+
+  holdSale: (h: Partial<T.HeldSale>): Promise<string> => go.HoldSale(h),
+  heldSales: (): Promise<T.HeldSale[]> => go.HeldSales(),
+  recallHeldSale: (id: string): Promise<T.HeldSale> => go.RecallHeldSale(id),
+
+  searchCustomers: (q: string): Promise<T.Customer[]> => go.SearchCustomers(q),
+  saveCustomer: (c: Partial<T.Customer>): Promise<T.Customer> => go.SaveCustomer(c),
 
   listProducts: (q: string): Promise<T.ProductDetail[]> => go.ListProducts(q),
   categories: (): Promise<T.Category[]> => go.Categories(),

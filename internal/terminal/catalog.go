@@ -26,6 +26,7 @@ type Item struct {
 	StockMilli    int64             `json:"stock_milli"`
 	CategoryID    string            `json:"category_id"`
 	Attributes    map[string]string `json:"attributes"`
+	TaxRateBP     int64             `json:"tax_rate_bp"`
 	// PackQtyMilli is set when the item was found by a pack barcode.
 	PackQtyMilli int64 `json:"pack_qty_milli"`
 }
@@ -59,19 +60,22 @@ func (t *Terminal) Currency(ctx context.Context) money.Currency {
 	return c
 }
 
-// Stock on this till's view = last level from the hub minus this till's
-// sales that the hub hasn't counted yet.
+// Stock on this till's view = last level from the hub, adjusted by this
+// till's sales and restocking returns that the hub hasn't counted yet.
+const pendingStock = `- COALESCE((SELECT sum(l.qty_milli) FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE l.variant_id=v.id AND s.synced_at=0 AND l.track_stock=1),0)
+	+ COALESCE((SELECT sum(rl.qty_milli) FROM return_lines rl JOIN returns r ON r.id=rl.return_id WHERE rl.variant_id=v.id AND r.synced_at=0 AND rl.restock=1 AND rl.track_stock=1),0)`
+
 const itemSelect = `SELECT v.id, p.id, p.name, v.name, v.sku, v.price_minor, p.unit, p.allow_fraction, p.track_stock,
 	COALESCE((SELECT qty_milli FROM stock_levels WHERE variant_id=v.id AND location_id=?),0)
-	- COALESCE((SELECT sum(l.qty_milli) FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE l.variant_id=v.id AND s.synced_at=0 AND l.track_stock=1),0),
-	p.category_id, p.attributes
+	` + pendingStock + `,
+	p.category_id, p.attributes, p.tax_rate_bp
 	FROM variants v JOIN products p ON p.id=v.product_id`
 
 func scanItem(r interface{ Scan(...any) error }) (Item, error) {
 	var it Item
 	var attrs string
 	err := r.Scan(&it.VariantID, &it.ProductID, &it.Name, &it.VariantName, &it.SKU, &it.PriceMinor, &it.Unit,
-		&it.AllowFraction, &it.TrackStock, &it.StockMilli, &it.CategoryID, &attrs)
+		&it.AllowFraction, &it.TrackStock, &it.StockMilli, &it.CategoryID, &attrs, &it.TaxRateBP)
 	if err == nil {
 		_ = json.Unmarshal([]byte(attrs), &it.Attributes)
 	}
@@ -247,7 +251,7 @@ func (t *Terminal) ListProducts(ctx context.Context, query string, limit int) ([
 	ph := strings.TrimSuffix(strings.Repeat("?,", len(out)), ",")
 	vrows, err := t.db.R().QueryContext(ctx, `SELECT v.id,v.product_id,v.name,v.sku,v.price_minor,v.cost_minor,v.active,
 		COALESCE((SELECT qty_milli FROM stock_levels WHERE variant_id=v.id AND location_id=?1),0)
-		- COALESCE((SELECT sum(l.qty_milli) FROM sale_lines l JOIN sales s ON s.id=l.sale_id WHERE l.variant_id=v.id AND s.synced_at=0 AND l.track_stock=1),0),
+		`+pendingStock+`,
 		COALESCE((SELECT group_concat(code, char(31)) FROM barcodes WHERE variant_id=v.id AND deleted=0),'')
 		FROM variants v WHERE v.product_id IN (`+ph+`) ORDER BY v.name`, ids...)
 	if err != nil {

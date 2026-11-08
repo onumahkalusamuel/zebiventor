@@ -16,6 +16,7 @@ import (
 	"github.com/onumahkalusamuel/zebiventor/internal/appdata"
 	"github.com/onumahkalusamuel/zebiventor/internal/discovery"
 	"github.com/onumahkalusamuel/zebiventor/internal/hub"
+	"github.com/onumahkalusamuel/zebiventor/internal/ids"
 	"github.com/onumahkalusamuel/zebiventor/internal/money"
 	"github.com/onumahkalusamuel/zebiventor/internal/printing"
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
@@ -48,10 +49,17 @@ type App struct {
 	hubCtl context.CancelFunc
 	hubErr string
 	user   *terminal.User
+
+	approvals map[string]approval // one-time manager approvals
+}
+
+type approval struct {
+	user    terminal.User
+	expires time.Time
 }
 
 func NewApp() *App {
-	return &App{dataDir: appdata.Dir(), log: slog.Default()}
+	return &App{dataDir: appdata.Dir(), log: slog.Default(), approvals: map[string]approval{}}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -403,10 +411,11 @@ func (a *App) CompleteSale(in terminal.SaleInput) (SaleResult, error) {
 	if err != nil {
 		return SaleResult{}, err
 	}
-	s, err := a.term.RecordSale(a.ctx, u, in)
+	s, err := a.term.RecordSale(a.ctx, u, a.takeApproval(in.ApprovalToken), in)
 	if err != nil {
 		return SaleResult{}, err
 	}
+	a.consumeApproval(in.ApprovalToken)
 	res := SaleResult{Sale: s}
 	pc := a.GetPrinterConfig()
 	openDrawer := false
@@ -439,13 +448,6 @@ func (a *App) RecentSales(query string) ([]terminal.SaleSummary, error) {
 
 // GetSale loads one sale.
 func (a *App) GetSale(id string) (*protocol.Sale, error) { return a.term.GetSale(a.ctx, id) }
-
-// TodayTotals summarises today's takings on this till.
-func (a *App) TodayTotals() (terminal.DayTotals, error) {
-	now := time.Now()
-	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	return a.term.TodayTotals(a.ctx, start.UnixMilli())
-}
 
 // ---------- printing ----------
 
@@ -571,11 +573,17 @@ func (a *App) TestPrint(c PrinterConfig) error {
 	return printing.Send(ctx, c.Target, job)
 }
 
-// OpenDrawer pulses the cash drawer connected to the receipt printer.
-func (a *App) OpenDrawer() error {
-	if _, err := a.currentUser(); err != nil {
+// OpenDrawer opens the cash drawer without a sale ("no sale"); cashiers need a manager.
+func (a *App) OpenDrawer(approvalToken string) error {
+	u, err := a.currentUser()
+	if err != nil {
 		return err
 	}
+	approver := a.takeApproval(approvalToken)
+	if !terminal.IsManager(u.Role) && approver == nil {
+		return terminal.ErrApprovalRequired
+	}
+	a.consumeApproval(approvalToken)
 	return printing.Send(a.ctx, a.GetPrinterConfig().Target, printing.DrawerKick())
 }
 
@@ -655,4 +663,254 @@ func (a *App) SavePaymentMethod(m protocol.PaymentMethod) (string, error) {
 	var r idResp
 	err := a.term.Admin(a.ctx, http.MethodPost, "/api/admin/payment-methods", m, &r)
 	return r.ID, err
+}
+
+// ---------- approvals ----------
+
+// ApprovalResult identifies the manager who approved.
+type ApprovalResult struct {
+	Token string `json:"token"`
+	Name  string `json:"name"`
+}
+
+// Approve verifies a manager's credentials at this till and returns a
+// single-use token, valid for two minutes, that authorises one action.
+func (a *App) Approve(username, secret string) (ApprovalResult, error) {
+	if _, err := a.currentUser(); err != nil {
+		return ApprovalResult{}, err
+	}
+	u, err := a.term.Authenticate(a.ctx, username, secret)
+	if err != nil {
+		return ApprovalResult{}, err
+	}
+	if !terminal.IsManager(u.Role) {
+		return ApprovalResult{}, errors.New(u.Name + " is not a manager")
+	}
+	tok := ids.New()
+	a.mu.Lock()
+	for k, v := range a.approvals {
+		if time.Now().After(v.expires) {
+			delete(a.approvals, k)
+		}
+	}
+	a.approvals[tok] = approval{user: u, expires: time.Now().Add(2 * time.Minute)}
+	a.mu.Unlock()
+	return ApprovalResult{Token: tok, Name: u.Name}, nil
+}
+
+// takeApproval resolves a token (nil if absent or expired). It is only
+// consumed by consumeApproval once the approved action has succeeded, so a
+// sale that fails validation doesn't need a second manager sign-off.
+func (a *App) takeApproval(tok string) *terminal.User {
+	if tok == "" {
+		return nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	ap, ok := a.approvals[tok]
+	if !ok || time.Now().After(ap.expires) {
+		delete(a.approvals, tok)
+		return nil
+	}
+	return &ap.user
+}
+
+func (a *App) consumeApproval(tok string) {
+	a.mu.Lock()
+	delete(a.approvals, tok)
+	a.mu.Unlock()
+}
+
+// ---------- returns ----------
+
+// LookupForReturn finds a sale (from any till) to refund against.
+func (a *App) LookupForReturn(receiptNo string) (*terminal.ReturnableSale, error) {
+	if _, err := a.currentUser(); err != nil {
+		return nil, err
+	}
+	return a.term.LookupForReturn(a.ctx, receiptNo)
+}
+
+// ReturnResult is returned after completing a refund.
+type ReturnResult struct {
+	Return     *protocol.Return `json:"return"`
+	Printed    bool             `json:"printed"`
+	PrintError string           `json:"print_error"`
+}
+
+// CompleteReturn records a refund and prints the refund slip.
+func (a *App) CompleteReturn(in terminal.ReturnInput) (ReturnResult, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return ReturnResult{}, err
+	}
+	r, err := a.term.RecordReturn(a.ctx, u, a.takeApproval(in.ApprovalToken), in)
+	if err != nil {
+		return ReturnResult{}, err
+	}
+	a.consumeApproval(in.ApprovalToken)
+	res := ReturnResult{Return: r}
+	pc := a.GetPrinterConfig()
+	cashOut := false
+	for _, f := range r.Refunds {
+		if f.Kind == protocol.PayCash {
+			cashOut = true
+		}
+	}
+	if pc.Target.Kind != printing.TransportNone && pc.Target.Kind != "" {
+		if err := a.sendReceipt(printing.FromReturn(r, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName(), false), pc, cashOut && pc.OpenDrawer); err != nil {
+			res.PrintError = err.Error()
+		} else {
+			res.Printed = true
+		}
+	}
+	return res, nil
+}
+
+// ReturnPreview renders a refund slip.
+func (a *App) ReturnPreview(id string, reprint bool) (string, error) {
+	r, err := a.term.GetReturn(a.ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return a.previewReceipt(printing.FromReturn(r, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName(), reprint))
+}
+
+// PrintReturn prints a refund slip.
+func (a *App) PrintReturn(id string, reprint bool) error {
+	r, err := a.term.GetReturn(a.ctx, id)
+	if err != nil {
+		return err
+	}
+	return a.sendReceipt(printing.FromReturn(r, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName(), reprint), a.GetPrinterConfig(), false)
+}
+
+// ---------- shifts ----------
+
+// CurrentShift returns the open shift with its live X report, or nil.
+func (a *App) CurrentShift() (*protocol.Shift, error) { return a.term.CurrentShift(a.ctx) }
+
+// OpenShift starts a shift with the given cash float.
+func (a *App) OpenShift(floatMinor int64) (*protocol.Shift, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.term.OpenShift(a.ctx, u, floatMinor)
+}
+
+// CashMovement records cash paid into or out of the drawer.
+func (a *App) CashMovement(kind string, amountMinor int64, reason, approvalToken string) error {
+	u, err := a.currentUser()
+	if err != nil {
+		return err
+	}
+	if _, err := a.term.AddCashMovement(a.ctx, u, a.takeApproval(approvalToken), kind, amountMinor, reason); err != nil {
+		return err
+	}
+	a.consumeApproval(approvalToken)
+	if pc := a.GetPrinterConfig(); pc.OpenDrawer && pc.Target.Kind != printing.TransportNone && pc.Target.Kind != "" {
+		_ = printing.Send(a.ctx, pc.Target, printing.DrawerKick())
+	}
+	return nil
+}
+
+// ShiftMovements lists paid-in/out entries of a shift.
+func (a *App) ShiftMovements(shiftID string) ([]protocol.CashMovement, error) {
+	return a.term.CashMovements(a.ctx, shiftID)
+}
+
+// CloseShiftResult is the outcome of closing a shift.
+type CloseShiftResult struct {
+	Shift      *protocol.Shift `json:"shift"`
+	PrintError string          `json:"print_error"`
+}
+
+// CloseShift counts the drawer, ends the shift and prints the Z report.
+func (a *App) CloseShift(countedMinor int64, note string) (CloseShiftResult, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return CloseShiftResult{}, err
+	}
+	s, err := a.term.CloseShift(a.ctx, u, countedMinor, note)
+	if err != nil {
+		return CloseShiftResult{}, err
+	}
+	res := CloseShiftResult{Shift: s}
+	if pc := a.GetPrinterConfig(); pc.Target.Kind != printing.TransportNone && pc.Target.Kind != "" {
+		if err := a.PrintShift(s.ID); err != nil {
+			res.PrintError = err.Error()
+		}
+	}
+	return res, nil
+}
+
+// ListShifts lists recent shifts on this till.
+func (a *App) ListShifts() ([]protocol.Shift, error) { return a.term.ListShifts(a.ctx, 60) }
+
+// ShiftPreview renders a shift's X/Z report.
+func (a *App) ShiftPreview(id string) (string, error) {
+	s, err := a.term.GetShift(a.ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return a.previewReceipt(printing.ShiftReport(s, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName()))
+}
+
+// PrintShift prints a shift's X/Z report.
+func (a *App) PrintShift(id string) error {
+	s, err := a.term.GetShift(a.ctx, id)
+	if err != nil {
+		return err
+	}
+	return a.sendReceipt(printing.ShiftReport(s, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName()), a.GetPrinterConfig(), false)
+}
+
+// ---------- held sales ----------
+
+// HoldSale parks the current cart.
+func (a *App) HoldSale(h terminal.HeldSale) (string, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return "", err
+	}
+	return a.term.HoldSale(a.ctx, u, h)
+}
+
+// HeldSales lists parked carts.
+func (a *App) HeldSales() ([]terminal.HeldSale, error) { return a.term.HeldSales(a.ctx) }
+
+// RecallHeldSale removes a parked cart and returns it.
+func (a *App) RecallHeldSale(id string) (*terminal.HeldSale, error) {
+	return a.term.TakeHeldSale(a.ctx, id)
+}
+
+// ---------- customers ----------
+
+// SearchCustomers finds customers.
+func (a *App) SearchCustomers(query string) ([]protocol.Customer, error) {
+	return a.term.SearchCustomers(a.ctx, query, 100)
+}
+
+// SaveCustomer creates or updates a customer (works offline).
+func (a *App) SaveCustomer(c protocol.Customer) (*protocol.Customer, error) {
+	if _, err := a.currentUser(); err != nil {
+		return nil, err
+	}
+	return a.term.SaveCustomer(a.ctx, c)
+}
+
+func (a *App) terminalName() string {
+	p, _ := a.term.Pairing(a.ctx)
+	return p.TerminalName
+}
+
+func (a *App) sendReceipt(r printing.Receipt, c PrinterConfig, openDrawer bool) error {
+	job, err := a.render(r, c, openDrawer)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	return printing.Send(ctx, c.Target, job)
 }

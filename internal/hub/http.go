@@ -54,6 +54,10 @@ func (h *Hub) Handler() http.Handler {
 		resp, err := h.Push(r.Context(), r.Context().Value(keyTerminal).(*Terminal), req)
 		respond(w, resp, err)
 	}))
+	mux.Handle("GET /api/sales/lookup", h.terminal(func(w http.ResponseWriter, r *http.Request) {
+		resp, err := h.LookupSale(r.Context(), r.URL.Query().Get("receipt"))
+		respond(w, resp, err)
+	}))
 	mux.Handle("POST /api/auth/login", h.terminal(func(w http.ResponseWriter, r *http.Request) {
 		var req protocol.LoginRequest
 		if !readJSON(w, r, &req) {

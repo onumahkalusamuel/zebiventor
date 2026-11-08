@@ -69,6 +69,7 @@ export interface Item {
   category_id: string
   attributes: Record<string, string> | null
   pack_qty_milli: number
+  tax_rate_bp: number
 }
 
 export interface PaymentMethod {
@@ -83,6 +84,9 @@ export interface PaymentMethod {
 
 export interface SaleLine {
   id: string
+  original_price_minor: number
+  tax_rate_bp: number
+  track_stock: boolean
   line_no: number
   variant_id: string
   product_name: string
@@ -117,12 +121,18 @@ export interface Sale {
   change_minor: number
   created_at: number
   synced_at: number
+  customer_id: string
+  customer_name: string
+  tax_mode: string
+  approved_by: string
   lines: SaleLine[]
   payments: SalePayment[]
 }
 
 export interface SaleSummary {
   id: string
+  kind: "sale" | "return"
+  customer: string
   receipt_no: string
   user_name: string
   total_minor: number
@@ -132,12 +142,6 @@ export interface SaleSummary {
   synced: boolean
 }
 
-export interface DayTotals {
-  count: number
-  total_minor: number
-  by_method: Record<string, number>
-  unsynced: number
-}
 
 export interface SaleResult {
   sale: Sale
@@ -279,6 +283,7 @@ export interface SetupHostInput {
 export interface CartLineInput {
   variant_id: string
   qty_milli: number
+  price_override?: number
 }
 
 export interface PaymentInput {
@@ -291,7 +296,9 @@ export interface SaleInput {
   lines: CartLineInput[]
   payments: PaymentInput[]
   discount_minor: number
+  customer_id: string
   note: string
+  approval_token: string
 }
 
 export interface StockAdjustRequest {
@@ -300,4 +307,117 @@ export interface StockAdjustRequest {
   delta_milli?: number
   count_milli?: number
   note: string
+}
+
+export interface Customer {
+  id: string
+  name: string
+  phone: string
+  email: string
+  notes: string
+  active: boolean
+  balance_minor: number
+  updated_at: number
+}
+
+export interface MethodTotal {
+  method_name: string
+  kind: string
+  sales_minor: number
+  refunds_minor: number
+  net_minor: number
+}
+
+export interface ShiftSummary {
+  sales_count: number
+  items_milli: number
+  gross_minor: number
+  discount_minor: number
+  tax_minor: number
+  net_sales_minor: number
+  returns_count: number
+  returns_minor: number
+  by_method: MethodTotal[] | null
+  opening_float_minor: number
+  cash_sales_minor: number
+  cash_refunds_minor: number
+  paid_in_minor: number
+  paid_out_minor: number
+  expected_cash_minor: number
+  counted_cash_minor: number
+  variance_minor: number
+  closed: boolean
+}
+
+export interface Shift {
+  id: string
+  status: "open" | "closed"
+  opened_by_name: string
+  opened_at: number
+  opening_float_minor: number
+  closed_by_name: string
+  closed_at: number
+  counted_cash_minor: number
+  note: string
+  summary?: ShiftSummary
+}
+
+export interface CashMovement {
+  id: string
+  kind: "paid_in" | "paid_out"
+  amount_minor: number
+  reason: string
+  user_name: string
+  created_at: number
+}
+
+export interface ReturnableLine extends SaleLine {
+  returned_milli: number
+  returnable_milli: number
+  paid_minor: number
+}
+
+export interface ReturnableSale {
+  sale: Sale
+  lines: ReturnableLine[]
+  source: "local" | "hub"
+  partial: boolean
+}
+
+export interface ReturnInput {
+  receipt_no: string
+  lines: { sale_line_id: string; qty_milli: number; restock: boolean }[]
+  refunds: PaymentInput[]
+  reason: string
+  approval_token: string
+}
+
+export interface Return {
+  id: string
+  return_no: string
+  sale_receipt_no: string
+  total_minor: number
+  tax_minor: number
+  customer_name: string
+}
+
+export interface ReturnResult {
+  return: Return
+  printed: boolean
+  print_error: string
+}
+
+export interface HeldSale {
+  id: string
+  label: string
+  user_name: string
+  item_count: number
+  total_minor: number
+  payload: string
+  created_at: number
+}
+
+export interface ApprovalResult {
+  token: string
+  name: string
 }

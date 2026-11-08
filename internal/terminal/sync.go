@@ -269,6 +269,22 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 				return err
 			}
 		}
+		for _, c := range r.Customers {
+			// Details: last write wins (a newer local edit is still queued).
+			// Balance: always the hub's.
+			if err := exec(`INSERT INTO customers(id,name,phone,email,notes,active,balance_minor,updated_at,search) VALUES(?,?,?,?,?,?,?,?,?)
+				ON CONFLICT(id) DO UPDATE SET balance_minor=excluded.balance_minor,
+				name=CASE WHEN excluded.updated_at>=customers.updated_at THEN excluded.name ELSE customers.name END,
+				phone=CASE WHEN excluded.updated_at>=customers.updated_at THEN excluded.phone ELSE customers.phone END,
+				email=CASE WHEN excluded.updated_at>=customers.updated_at THEN excluded.email ELSE customers.email END,
+				notes=CASE WHEN excluded.updated_at>=customers.updated_at THEN excluded.notes ELSE customers.notes END,
+				active=CASE WHEN excluded.updated_at>=customers.updated_at THEN excluded.active ELSE customers.active END,
+				search=CASE WHEN excluded.updated_at>=customers.updated_at THEN excluded.search ELSE customers.search END,
+				updated_at=max(excluded.updated_at, customers.updated_at)`,
+				c.ID, c.Name, c.Phone, c.Email, c.Notes, boolInt(c.Active), c.BalanceMinor, c.UpdatedAt, customerSearch(c)); err != nil {
+				return err
+			}
+		}
 		return setKV(ctx, tx, "last_rev", strconv.FormatInt(r.Rev, 10))
 	})
 }
@@ -359,6 +375,10 @@ func (t *Terminal) pushOnce(ctx context.Context) (int, error) {
 					}
 					if _, err := tx.ExecContext(ctx, `UPDATE sales SET synced_at=? WHERE id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
 						now, r.ID, protocol.OpSaleCreate); err != nil {
+						return err
+					}
+					if _, err := tx.ExecContext(ctx, `UPDATE returns SET synced_at=? WHERE id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
+						now, r.ID, protocol.OpReturnCreate); err != nil {
 						return err
 					}
 				case protocol.OpRejected:

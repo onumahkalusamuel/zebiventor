@@ -9,36 +9,34 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, errorMessage } from "@/lib/api"
 import { formatDateTime, formatQty } from "@/lib/format"
+import { useShift } from "@/components/shift-gate"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 import { useMoney } from "@/lib/state"
 
 export function Sales() {
   const { fmt } = useMoney()
   const [q, setQ] = useState("")
-  const [open, setOpen] = useState<string | null>(null)
+  const [openSale, setOpenSale] = useState<{ id: string; kind: "sale" | "return" } | null>(null)
   const sales = useQuery({ queryKey: ["sales", q], queryFn: () => api.recentSales(q) })
-  const today = useQuery({ queryKey: ["today"], queryFn: api.todayTotals, refetchInterval: 15_000 })
-
-  const methods = Object.entries(today.data?.by_method ?? {}).sort((a, b) => b[1] - a[1])
+  const shift = useShift()
+  const sum = shift.data?.summary
 
   return (
     <Page>
-      <PageHeader title="Sales" description="Sales made on this till. Totals are for today." />
+      <PageHeader title="Sales" description="Sales and refunds made on this till. Figures are for the current shift." />
       <div className="space-y-6 px-8 pb-8">
         <div className="grid grid-cols-4 gap-3">
-          <StatCard label="Today’s takings" value={fmt(today.data?.total_minor ?? 0)} sub={`${today.data?.count ?? 0} sales`} />
-          {methods.slice(0, 2).map(([name, amt]) => (
-            <StatCard key={name} label={name} value={fmt(amt)} />
+          <StatCard label="Shift takings" value={fmt((sum?.net_sales_minor ?? 0) - (sum?.returns_minor ?? 0))} sub={shift.data ? `${sum?.sales_count ?? 0} sales` : "No shift open"} />
+          {(sum?.by_method ?? []).slice(0, 2).map((m) => (
+            <StatCard key={m.method_name} label={m.method_name} value={fmt(m.net_minor)} />
           ))}
-          <StatCard
-            label="Waiting to sync"
-            value={today.data?.unsynced ?? 0}
-            sub={today.data?.unsynced ? "Will send when the hub is reachable" : "All sent to the hub"}
-          />
+          <StatCard label="Refunds" value={fmt(sum?.returns_minor ?? 0)} sub={`${sum?.returns_count ?? 0} this shift`} />
         </div>
 
         <div className="relative max-w-sm">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find receipt number…" className="h-10 pl-9" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Receipt number or customer…" className="h-10 pl-9" />
         </div>
 
         {sales.data && sales.data.length === 0 ? (
@@ -59,13 +57,19 @@ export function Sales() {
               </TableHeader>
               <TableBody>
                 {(sales.data ?? []).map((s) => (
-                  <TableRow key={s.id} className="cursor-pointer" onClick={() => setOpen(s.id)}>
-                    <TableCell className="pl-4 font-medium tabular">{s.receipt_no}</TableCell>
+                  <TableRow key={s.id} className="cursor-pointer" onClick={() => setOpenSale({ id: s.id, kind: s.kind })}>
+                    <TableCell className="pl-4 font-medium tabular">
+                      {s.receipt_no}
+                      {s.kind === "return" && <Badge variant="outline" className="ml-2 border-red-500/40 text-red-700 dark:text-red-400">Refund</Badge>}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{formatDateTime(s.created_at)}</TableCell>
-                    <TableCell>{s.user_name}</TableCell>
+                    <TableCell>
+                      {s.user_name}
+                      {s.customer && <div className="text-xs text-muted-foreground">{s.customer}</div>}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{s.methods}</TableCell>
                     <TableCell className="text-right tabular">{formatQty(s.items)}</TableCell>
-                    <TableCell className="text-right font-semibold tabular">{fmt(s.total_minor)}</TableCell>
+                    <TableCell className={cn("text-right font-semibold tabular", s.total_minor < 0 && "text-red-600")}>{fmt(s.total_minor)}</TableCell>
                     <TableCell className="pr-4">
                       {s.synced ? <CloudCheck className="size-4 text-emerald-600" /> : <CloudUpload className="size-4 text-amber-600" />}
                     </TableCell>
@@ -76,21 +80,27 @@ export function Sales() {
           </div>
         )}
       </div>
-      <SaleSheet id={open} onClose={() => setOpen(null)} />
+      <SaleSheet target={openSale} onClose={() => setOpenSale(null)} />
     </Page>
   )
 }
 
-function SaleSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const sale = useQuery({ queryKey: ["sale", id], queryFn: () => api.getSale(id!), enabled: !!id })
-  const preview = useQuery({ queryKey: ["preview", id], queryFn: () => api.receiptPreview(id!, true), enabled: !!id })
+function SaleSheet({ target, onClose }: { target: { id: string; kind: "sale" | "return" } | null; onClose: () => void }) {
+  const id = target?.id ?? null
+  const isReturn = target?.kind === "return"
+  const sale = useQuery({ queryKey: ["sale", id], queryFn: () => api.getSale(id!), enabled: !!id && !isReturn })
+  const preview = useQuery({
+    queryKey: ["preview", id],
+    queryFn: () => (isReturn ? api.returnPreview(id!, true) : api.receiptPreview(id!, true)),
+    enabled: !!id,
+  })
   const [printing, setPrinting] = useState(false)
 
   async function reprint() {
     if (!id) return
     setPrinting(true)
     try {
-      await api.printSale(id, true)
+      await (isReturn ? api.printReturn(id, true) : api.printSale(id, true))
       toast.success("Reprint sent to printer")
     } catch (e) {
       toast.error(errorMessage(e))
@@ -103,9 +113,11 @@ function SaleSheet({ id, onClose }: { id: string | null; onClose: () => void }) 
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[480px] gap-0 sm:max-w-[480px]">
         <SheetHeader className="border-b">
-          <SheetTitle>Receipt {sale.data?.receipt_no}</SheetTitle>
+          <SheetTitle>{isReturn ? "Refund slip" : `Receipt ${sale.data?.receipt_no ?? ""}`}</SheetTitle>
           <SheetDescription>
-            {sale.data && formatDateTime(sale.data.created_at)} · {sale.data?.user_name} · {sale.data?.synced_at ? "synced to hub" : "not yet synced"}
+            {isReturn
+              ? "Reprints are marked as such."
+              : sale.data && `${formatDateTime(sale.data.created_at)} · ${sale.data.user_name} · ${sale.data.synced_at ? "synced to hub" : "not yet synced"}`}
           </SheetDescription>
         </SheetHeader>
         <div className="flex-1 overflow-y-auto bg-muted p-6">
@@ -118,7 +130,7 @@ function SaleSheet({ id, onClose }: { id: string | null; onClose: () => void }) 
         <div className="border-t p-4">
           <Button className="h-11 w-full" onClick={reprint} disabled={printing}>
             {printing ? <Loader2 className="animate-spin" /> : <Printer />}
-            Reprint receipt
+            {isReturn ? "Reprint refund slip" : "Reprint receipt"}
           </Button>
         </div>
       </SheetContent>

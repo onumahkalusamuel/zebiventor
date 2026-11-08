@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/ids"
@@ -17,6 +18,8 @@ import (
 type CartLine struct {
 	VariantID string `json:"variant_id"`
 	QtyMilli  int64  `json:"qty_milli"`
+	// PriceOverride replaces the catalogue unit price (needs a manager).
+	PriceOverride *int64 `json:"price_override,omitempty"`
 }
 
 // PaymentInput is one tender.
@@ -31,7 +34,9 @@ type SaleInput struct {
 	Lines         []CartLine     `json:"lines"`
 	Payments      []PaymentInput `json:"payments"`
 	DiscountMinor int64          `json:"discount_minor"`
+	CustomerID    string         `json:"customer_id"`
 	Note          string         `json:"note"`
+	ApprovalToken string         `json:"approval_token"`
 }
 
 // SaleError is a problem the cashier must fix before the sale can complete.
@@ -41,12 +46,86 @@ func (e SaleError) Error() string { return e.Msg }
 
 func saleErr(format string, a ...any) error { return SaleError{fmt.Sprintf(format, a...)} }
 
-var discountRoles = map[string]bool{protocol.RoleAdmin: true, protocol.RoleManager: true}
+// ErrApprovalRequired means a manager must authorise the action.
+var ErrApprovalRequired = SaleError{"manager approval required"}
+
+// IsManager reports whether the role can authorise discounts, overrides and refunds.
+func IsManager(role string) bool { return role == protocol.RoleAdmin || role == protocol.RoleManager }
+
+// approvedBy decides who authorised a sensitive action, or fails.
+func approvedBy(u User, approver *User) (string, error) {
+	if IsManager(u.Role) {
+		return u.ID, nil
+	}
+	if approver != nil && IsManager(approver.Role) {
+		return approver.ID, nil
+	}
+	return "", ErrApprovalRequired
+}
+
+// mulDivRound returns a*b/c rounded half up (a, b, c >= 0).
+func mulDivRound(a, b, c int64) int64 {
+	if c == 0 {
+		return 0
+	}
+	return (a*b + c/2) / c
+}
+
+// lineTax computes the tax contained in (inclusive) or added to (exclusive) net.
+func lineTax(mode string, net, bp int64) int64 {
+	if bp <= 0 || net <= 0 {
+		return 0
+	}
+	switch mode {
+	case protocol.TaxInclusive:
+		return net - mulDivRound(net, 10000, 10000+bp)
+	case protocol.TaxExclusive:
+		return mulDivRound(net, bp, 10000)
+	}
+	return 0
+}
+
+// allocate splits amount across weights proportionally; shares sum exactly to amount.
+func allocate(amount int64, weights []int64) []int64 {
+	out := make([]int64, len(weights))
+	var total int64
+	for _, w := range weights {
+		total += w
+	}
+	if amount == 0 || total == 0 {
+		return out
+	}
+	type rem struct {
+		i int
+		r int64
+	}
+	var given int64
+	rems := make([]rem, len(weights))
+	for i, w := range weights {
+		out[i] = amount * w / total
+		given += out[i]
+		rems[i] = rem{i, amount * w % total}
+	}
+	sort.SliceStable(rems, func(a, b int) bool { return rems[a].r > rems[b].r })
+	for k := 0; given < amount; k++ {
+		out[rems[k%len(rems)].i]++
+		given++
+	}
+	return out
+}
+
+func (t *Terminal) taxMode(ctx context.Context) string {
+	switch m := t.Settings(ctx)["tax_mode"]; m {
+	case protocol.TaxInclusive, protocol.TaxExclusive:
+		return m
+	}
+	return protocol.TaxNone
+}
 
 // RecordSale validates and commits a sale locally, queues it for the hub and
-// returns the stored sale. Prices come from the local catalogue, never from
-// the UI, and totals are computed here.
-func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*protocol.Sale, error) {
+// returns the stored sale. Prices come from the local catalogue (or an
+// approved override), never blindly from the UI, and totals are computed here.
+func (t *Terminal) RecordSale(ctx context.Context, u User, approver *User, in SaleInput) (*protocol.Sale, error) {
 	p, ok := t.Pairing(ctx)
 	if !ok {
 		return nil, errors.New("this till is not paired with a hub")
@@ -57,26 +136,45 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 	if in.DiscountMinor < 0 {
 		return nil, saleErr("discount cannot be negative")
 	}
-	if in.DiscountMinor > 0 && !discountRoles[u.Role] {
-		return nil, saleErr("only a manager can give a discount")
+	needsApproval := in.DiscountMinor > 0
+	for _, l := range in.Lines {
+		if l.PriceOverride != nil {
+			if *l.PriceOverride < 0 {
+				return nil, saleErr("price cannot be negative")
+			}
+			needsApproval = true
+		}
 	}
+	approved := ""
+	if needsApproval {
+		by, err := approvedBy(u, approver)
+		if err != nil {
+			return nil, err
+		}
+		approved = by
+	}
+	shiftID := t.kv(ctx, "shift_id")
+	if shiftID == "" {
+		return nil, saleErr("open a shift before selling")
+	}
+	mode := t.taxMode(ctx)
 
 	sale := &protocol.Sale{
-		ID:         ids.New(),
-		TerminalID: p.TerminalID,
-		LocationID: p.LocationID,
-		UserID:     u.ID,
-		UserName:   u.Name,
-		Status:     "completed",
-		Note:       in.Note,
+		ID: ids.New(), TerminalID: p.TerminalID, LocationID: p.LocationID, UserID: u.ID, UserName: u.Name,
+		Status: "completed", Note: in.Note, ShiftID: shiftID, ApprovedBy: approved, TaxMode: mode, CustomerID: in.CustomerID,
 	}
 
 	err := t.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		now := ids.NowMs()
 		sale.CreatedAt = now
-		sale.Lines = sale.Lines[:0]
-		sale.Payments = sale.Payments[:0]
-		sale.SubtotalMinor = 0
+		sale.Lines, sale.Payments = nil, nil
+		sale.SubtotalMinor, sale.TaxMinor = 0, 0
+
+		if sale.CustomerID != "" {
+			if err := tx.QueryRowContext(ctx, "SELECT name FROM customers WHERE id=?", sale.CustomerID).Scan(&sale.CustomerName); err != nil {
+				return saleErr("that customer is not known on this till")
+			}
+		}
 
 		for i, cl := range in.Lines {
 			if cl.QtyMilli <= 0 {
@@ -84,9 +182,9 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 			}
 			var l protocol.SaleLine
 			var allowFraction, active bool
-			err := tx.QueryRowContext(ctx, `SELECT v.id, p.name, v.name, v.sku, v.price_minor, p.track_stock, p.allow_fraction, (p.active AND v.active)
+			err := tx.QueryRowContext(ctx, `SELECT v.id, p.name, v.name, v.sku, v.price_minor, p.track_stock, p.allow_fraction, (p.active AND v.active), p.tax_rate_bp
 				FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id=?`, cl.VariantID).
-				Scan(&l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.UnitPriceMinor, &l.TrackStock, &allowFraction, &active)
+				Scan(&l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.UnitPriceMinor, &l.TrackStock, &allowFraction, &active, &l.TaxRateBP)
 			if errors.Is(err, sql.ErrNoRows) {
 				return saleErr("an item in the cart is no longer in the catalogue")
 			}
@@ -99,6 +197,13 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 			if !allowFraction && cl.QtyMilli%money.QtyScale != 0 {
 				return saleErr("%s is sold in whole units", l.ProductName)
 			}
+			if cl.PriceOverride != nil && *cl.PriceOverride != l.UnitPriceMinor {
+				l.OriginalPriceMinor = l.UnitPriceMinor
+				l.UnitPriceMinor = *cl.PriceOverride
+			}
+			if mode == protocol.TaxNone {
+				l.TaxRateBP = 0
+			}
 			l.ID = ids.New()
 			l.LineNo = i + 1
 			l.QtyMilli = cl.QtyMilli
@@ -110,10 +215,28 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 			return saleErr("discount is larger than the sale")
 		}
 		sale.DiscountMinor = in.DiscountMinor
-		sale.TotalMinor = sale.SubtotalMinor - sale.DiscountMinor + sale.TaxMinor
 
-		var paid, cash int64
-		sale.PaidMinor = 0
+		// Spread the cart discount over lines, then compute tax on what's left.
+		weights := make([]int64, len(sale.Lines))
+		for i, l := range sale.Lines {
+			weights[i] = l.TotalMinor
+		}
+		shares := allocate(sale.DiscountMinor, weights)
+		var net int64
+		for i := range sale.Lines {
+			l := &sale.Lines[i]
+			l.DiscountMinor = shares[i]
+			lineNet := l.TotalMinor - l.DiscountMinor
+			l.TaxMinor = lineTax(mode, lineNet, l.TaxRateBP)
+			sale.TaxMinor += l.TaxMinor
+			net += lineNet
+		}
+		sale.TotalMinor = net
+		if mode == protocol.TaxExclusive {
+			sale.TotalMinor += sale.TaxMinor
+		}
+
+		var paid, cash, credit int64
 		for _, pi := range in.Payments {
 			if pi.AmountMinor <= 0 {
 				continue
@@ -131,14 +254,18 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 			if requiresRef && pi.Reference == "" {
 				return saleErr("enter the reference for the %s payment", pm.MethodName)
 			}
-			pm.ID = ids.New()
-			pm.AmountMinor = pi.AmountMinor
-			pm.Reference = pi.Reference
+			pm.ID, pm.AmountMinor, pm.Reference = ids.New(), pi.AmountMinor, pi.Reference
 			paid += pm.AmountMinor
-			if pm.Kind == protocol.PayCash {
+			switch pm.Kind {
+			case protocol.PayCash:
 				cash += pm.AmountMinor
+			case protocol.PayCredit:
+				credit += pm.AmountMinor
 			}
 			sale.Payments = append(sale.Payments, pm)
+		}
+		if credit > 0 && sale.CustomerID == "" {
+			return saleErr("choose the customer to put this on account")
 		}
 		if paid < sale.TotalMinor {
 			return saleErr("payment is short by %s", t.Currency(ctx).FormatSymbol(sale.TotalMinor-paid))
@@ -149,27 +276,24 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 		}
 		sale.PaidMinor, sale.ChangeMinor = paid, change
 
-		// Receipt number: terminal prefix + local sequence, unique offline.
-		var seqStr string
-		tx.QueryRowContext(ctx, "SELECT value FROM kv WHERE key='receipt_seq'").Scan(&seqStr)
-		seq, _ := strconv.ParseInt(seqStr, 10, 64)
-		seq++
-		if err := setKV(ctx, tx, "receipt_seq", strconv.FormatInt(seq, 10)); err != nil {
+		seq, err := nextSeq(ctx, tx, "receipt_seq")
+		if err != nil {
 			return err
 		}
 		sale.ReceiptNo = fmt.Sprintf("%s-%06d", p.ReceiptPrefix, seq)
 
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sales(id,receipt_no,location_id,user_id,user_name,customer_id,status,subtotal_minor,discount_minor,
-			tax_minor,total_minor,paid_minor,change_minor,note,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			sale.ID, sale.ReceiptNo, sale.LocationID, sale.UserID, sale.UserName, sale.CustomerID, sale.Status, sale.SubtotalMinor,
-			sale.DiscountMinor, sale.TaxMinor, sale.TotalMinor, sale.PaidMinor, sale.ChangeMinor, sale.Note, sale.CreatedAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sales(id,receipt_no,location_id,user_id,user_name,customer_id,customer_name,status,subtotal_minor,discount_minor,
+			tax_minor,total_minor,paid_minor,change_minor,note,created_at,shift_id,approved_by,tax_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			sale.ID, sale.ReceiptNo, sale.LocationID, sale.UserID, sale.UserName, sale.CustomerID, sale.CustomerName, sale.Status, sale.SubtotalMinor,
+			sale.DiscountMinor, sale.TaxMinor, sale.TotalMinor, sale.PaidMinor, sale.ChangeMinor, sale.Note, sale.CreatedAt,
+			sale.ShiftID, sale.ApprovedBy, sale.TaxMode); err != nil {
 			return err
 		}
 		for _, l := range sale.Lines {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sale_lines(id,sale_id,line_no,variant_id,product_name,variant_name,sku,qty_milli,unit_price_minor,
-				discount_minor,tax_minor,total_minor,track_stock) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+				discount_minor,tax_minor,total_minor,track_stock,original_price_minor,tax_rate_bp) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 				l.ID, sale.ID, l.LineNo, l.VariantID, l.ProductName, l.VariantName, l.SKU, l.QtyMilli, l.UnitPriceMinor,
-				l.DiscountMinor, l.TaxMinor, l.TotalMinor, boolInt(l.TrackStock)); err != nil {
+				l.DiscountMinor, l.TaxMinor, l.TotalMinor, boolInt(l.TrackStock), l.OriginalPriceMinor, l.TaxRateBP); err != nil {
 				return err
 			}
 		}
@@ -179,13 +303,7 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 				return err
 			}
 		}
-		payload, err := json.Marshal(sale)
-		if err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, "INSERT INTO outbox(id,kind,ref_id,payload,created_at) VALUES(?,?,?,?,?)",
-			ids.New(), protocol.OpSaleCreate, sale.ID, string(payload), now)
-		return err
+		return enqueue(ctx, tx, protocol.OpSaleCreate, sale.ID, sale, now)
 	})
 	if err != nil {
 		return nil, err
@@ -195,13 +313,32 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, in SaleInput) (*proto
 	return sale, nil
 }
 
+// nextSeq increments and returns a local counter.
+func nextSeq(ctx context.Context, tx *sql.Tx, key string) (int64, error) {
+	var cur string
+	tx.QueryRowContext(ctx, "SELECT value FROM kv WHERE key=?", key).Scan(&cur)
+	n, _ := strconv.ParseInt(cur, 10, 64)
+	n++
+	return n, setKV(ctx, tx, key, strconv.FormatInt(n, 10))
+}
+
+// enqueue adds an op to the outbox in the caller's transaction.
+func enqueue(ctx context.Context, tx *sql.Tx, kind, refID string, payload any, now int64) error {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO outbox(id,kind,ref_id,payload,created_at) VALUES(?,?,?,?,?)", ids.New(), kind, refID, string(b), now)
+	return err
+}
+
 // GetSale loads a sale recorded on this till.
 func (t *Terminal) GetSale(ctx context.Context, id string) (*protocol.Sale, error) {
 	s := &protocol.Sale{}
-	err := t.db.R().QueryRowContext(ctx, `SELECT id,receipt_no,location_id,user_id,user_name,customer_id,status,subtotal_minor,discount_minor,
-		tax_minor,total_minor,paid_minor,change_minor,note,created_at,synced_at FROM sales WHERE id=? OR receipt_no=?`, id, id).
-		Scan(&s.ID, &s.ReceiptNo, &s.LocationID, &s.UserID, &s.UserName, &s.CustomerID, &s.Status, &s.SubtotalMinor, &s.DiscountMinor,
-			&s.TaxMinor, &s.TotalMinor, &s.PaidMinor, &s.ChangeMinor, &s.Note, &s.CreatedAt, &s.SyncedAt)
+	err := t.db.R().QueryRowContext(ctx, `SELECT id,receipt_no,location_id,user_id,user_name,customer_id,customer_name,status,subtotal_minor,discount_minor,
+		tax_minor,total_minor,paid_minor,change_minor,note,created_at,synced_at,shift_id,approved_by,tax_mode FROM sales WHERE id=? OR receipt_no=?`, id, id).
+		Scan(&s.ID, &s.ReceiptNo, &s.LocationID, &s.UserID, &s.UserName, &s.CustomerID, &s.CustomerName, &s.Status, &s.SubtotalMinor, &s.DiscountMinor,
+			&s.TaxMinor, &s.TotalMinor, &s.PaidMinor, &s.ChangeMinor, &s.Note, &s.CreatedAt, &s.SyncedAt, &s.ShiftID, &s.ApprovedBy, &s.TaxMode)
 	if err != nil {
 		return nil, err
 	}
@@ -209,14 +346,14 @@ func (t *Terminal) GetSale(ctx context.Context, id string) (*protocol.Sale, erro
 	s.TerminalID = p.TerminalID
 
 	rows, err := t.db.R().QueryContext(ctx, `SELECT id,line_no,variant_id,product_name,variant_name,sku,qty_milli,unit_price_minor,discount_minor,
-		tax_minor,total_minor,track_stock FROM sale_lines WHERE sale_id=? ORDER BY line_no`, s.ID)
+		tax_minor,total_minor,track_stock,original_price_minor,tax_rate_bp FROM sale_lines WHERE sale_id=? ORDER BY line_no`, s.ID)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var l protocol.SaleLine
 		if err := rows.Scan(&l.ID, &l.LineNo, &l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.QtyMilli, &l.UnitPriceMinor,
-			&l.DiscountMinor, &l.TaxMinor, &l.TotalMinor, &l.TrackStock); err != nil {
+			&l.DiscountMinor, &l.TaxMinor, &l.TotalMinor, &l.TrackStock, &l.OriginalPriceMinor, &l.TaxRateBP); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -224,43 +361,59 @@ func (t *Terminal) GetSale(ctx context.Context, id string) (*protocol.Sale, erro
 	}
 	rows.Close()
 
-	rows, err = t.db.R().QueryContext(ctx, `SELECT id,method_id,method_name,kind,amount_minor,reference FROM sale_payments WHERE sale_id=?`, s.ID)
+	s.Payments, err = t.payments(ctx, "sale_payments", "sale_id", s.ID)
+	return s, err
+}
+
+func (t *Terminal) payments(ctx context.Context, table, col, id string) ([]protocol.SalePayment, error) {
+	rows, err := t.db.R().QueryContext(ctx, `SELECT id,method_id,method_name,kind,amount_minor,reference FROM `+table+` WHERE `+col+`=?`, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	var out []protocol.SalePayment
 	for rows.Next() {
 		var pm protocol.SalePayment
 		if err := rows.Scan(&pm.ID, &pm.MethodID, &pm.MethodName, &pm.Kind, &pm.AmountMinor, &pm.Reference); err != nil {
 			return nil, err
 		}
-		s.Payments = append(s.Payments, pm)
+		out = append(out, pm)
 	}
-	return s, rows.Err()
+	return out, rows.Err()
 }
 
-// SaleSummary is a row in the sales history list.
+// SaleSummary is a row in the sales history list (sales and returns).
 type SaleSummary struct {
 	ID         string `json:"id"`
+	Kind       string `json:"kind"` // sale | return
 	ReceiptNo  string `json:"receipt_no"`
 	UserName   string `json:"user_name"`
-	TotalMinor int64  `json:"total_minor"`
+	Customer   string `json:"customer"`
+	TotalMinor int64  `json:"total_minor"` // negative for returns
 	Items      int64  `json:"items"`
 	Methods    string `json:"methods"`
 	CreatedAt  int64  `json:"created_at"`
 	Synced     bool   `json:"synced"`
 }
 
-// RecentSales lists this till's sales, newest first.
+// RecentSales lists this till's sales and returns, newest first.
 func (t *Terminal) RecentSales(ctx context.Context, query string, limit int) ([]SaleSummary, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := t.db.R().QueryContext(ctx, `SELECT s.id, s.receipt_no, s.user_name, s.total_minor,
-		(SELECT COALESCE(sum(qty_milli),0) FROM sale_lines WHERE sale_id=s.id),
-		(SELECT COALESCE(group_concat(method_name, ', '),'') FROM sale_payments WHERE sale_id=s.id),
-		s.created_at, s.synced_at > 0
-		FROM sales s WHERE (?='' OR s.receipt_no LIKE '%'||?||'%') ORDER BY s.created_at DESC LIMIT ?`, query, query, limit)
+	rows, err := t.db.R().QueryContext(ctx, `SELECT * FROM (
+		SELECT s.id, 'sale', s.receipt_no, s.user_name, s.customer_name, s.total_minor,
+			(SELECT COALESCE(sum(qty_milli),0) FROM sale_lines WHERE sale_id=s.id),
+			(SELECT COALESCE(group_concat(method_name, ', '),'') FROM sale_payments WHERE sale_id=s.id),
+			s.created_at, s.synced_at > 0
+		FROM sales s WHERE (?1='' OR s.receipt_no LIKE '%'||?1||'%' OR s.customer_name LIKE '%'||?1||'%')
+		UNION ALL
+		SELECT r.id, 'return', r.return_no, r.user_name, r.customer_name, -r.total_minor,
+			(SELECT COALESCE(sum(qty_milli),0) FROM return_lines WHERE return_id=r.id),
+			(SELECT COALESCE(group_concat(method_name, ', '),'') FROM return_refunds WHERE return_id=r.id),
+			r.created_at, r.synced_at > 0
+		FROM returns r WHERE (?1='' OR r.return_no LIKE '%'||?1||'%' OR r.sale_receipt_no LIKE '%'||?1||'%' OR r.customer_name LIKE '%'||?1||'%')
+		) ORDER BY 9 DESC LIMIT ?2`, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -268,53 +421,10 @@ func (t *Terminal) RecentSales(ctx context.Context, query string, limit int) ([]
 	out := []SaleSummary{}
 	for rows.Next() {
 		var s SaleSummary
-		if err := rows.Scan(&s.ID, &s.ReceiptNo, &s.UserName, &s.TotalMinor, &s.Items, &s.Methods, &s.CreatedAt, &s.Synced); err != nil {
+		if err := rows.Scan(&s.ID, &s.Kind, &s.ReceiptNo, &s.UserName, &s.Customer, &s.TotalMinor, &s.Items, &s.Methods, &s.CreatedAt, &s.Synced); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
 	}
 	return out, rows.Err()
-}
-
-// DayTotals summarises today's sales on this till.
-type DayTotals struct {
-	Count    int64            `json:"count"`
-	Total    int64            `json:"total_minor"`
-	ByMethod map[string]int64 `json:"by_method"`
-	Unsynced int64            `json:"unsynced"`
-}
-
-// TodayTotals returns today's totals for this till.
-func (t *Terminal) TodayTotals(ctx context.Context, startOfDayMs int64) (DayTotals, error) {
-	d := DayTotals{ByMethod: map[string]int64{}}
-	err := t.db.R().QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(total_minor),0), COALESCE(sum(synced_at=0),0) FROM sales WHERE created_at>=?`, startOfDayMs).
-		Scan(&d.Count, &d.Total, &d.Unsynced)
-	if err != nil {
-		return d, err
-	}
-	rows, err := t.db.R().QueryContext(ctx, `SELECT p.method_name, sum(p.amount_minor)
-		FROM sale_payments p JOIN sales s ON s.id=p.sale_id WHERE s.created_at>=? GROUP BY p.method_name`, startOfDayMs)
-	if err != nil {
-		return d, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		var amt int64
-		if err := rows.Scan(&name, &amt); err != nil {
-			return d, err
-		}
-		d.ByMethod[name] = amt
-	}
-	// Change is given in cash, so net it off the cash tender.
-	var change int64
-	t.db.R().QueryRowContext(ctx, `SELECT COALESCE(sum(change_minor),0) FROM sales WHERE created_at>=?`, startOfDayMs).Scan(&change)
-	if change > 0 {
-		var cashName string
-		t.db.R().QueryRowContext(ctx, `SELECT name FROM payment_methods WHERE kind='cash' ORDER BY sort_order LIMIT 1`).Scan(&cashName)
-		if cashName != "" {
-			d.ByMethod[cashName] -= change
-		}
-	}
-	return d, rows.Err()
 }

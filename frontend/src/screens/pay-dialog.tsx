@@ -2,15 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowRightLeft, Banknote, CheckCircle2, CreditCard, Loader2, Printer, Smartphone, Ticket, Wallet, X, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
+import { useApproval } from "@/components/approval"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { api, errorMessage } from "@/lib/api"
 import { parseMoney } from "@/lib/format"
 import { useMoney } from "@/lib/state"
-import type { PaymentMethod, SaleResult } from "@/lib/types"
+import type { Customer, PaymentMethod, SaleResult } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import type { CartLine } from "./sell"
+import { unitPrice, type CartLine } from "./sell"
 
 const kindIcon: Record<string, LucideIcon> = {
   cash: Banknote,
@@ -32,19 +33,28 @@ interface Tender {
 export function PayDialog({
   open,
   onOpenChange,
-  cart,
+  lines,
   discount,
   total,
+  customer,
+  approvalToken,
+  needsApproval,
+  onNeedCustomer,
   onDone,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
-  cart: CartLine[]
+  lines: CartLine[]
   discount: number
   total: number
+  customer: Customer | null
+  approvalToken: string
+  needsApproval: boolean
+  onNeedCustomer: () => void
   onDone: () => void
 }) {
   const { fmt, currency } = useMoney()
+  const requestApproval = useApproval()
   const methods = useQuery({ queryKey: ["payment-methods"], queryFn: api.paymentMethods })
   const [tenders, setTenders] = useState<Tender[]>([])
   const [busy, setBusy] = useState(false)
@@ -69,6 +79,12 @@ export function PayDialog({
   const ready = paid >= total && !invalidAmount && !missingRef && !nonCashOver
 
   function addTender(m: PaymentMethod) {
+    if (m.kind === "credit" && !customer) {
+      toast.info("Choose the customer first to put this sale on their account")
+      onOpenChange(false)
+      onNeedCustomer()
+      return
+    }
     const amount = remaining > 0 ? (remaining / 10 ** currency.digits).toFixed(currency.digits) : ""
     setTenders((ts) => [...ts, { key: ++keyRef.current, method: m, amount, reference: "" }])
     setTimeout(() => {
@@ -103,13 +119,30 @@ export function PayDialog({
   async function complete() {
     if (!ready || busy) return
     setBusy(true)
-    try {
-      const res = await api.completeSale({
-        lines: cart.map((l) => ({ variant_id: l.item.variant_id, qty_milli: l.qty_milli })),
+    const submit = (token: string) =>
+      api.completeSale({
+        lines: lines.map((l) => ({
+          variant_id: l.item.variant_id,
+          qty_milli: l.qty_milli,
+          ...(l.price_override !== undefined ? { price_override: unitPrice(l) } : {}),
+        })),
         payments: parsed.filter((t) => t.minor > 0).map((t) => ({ method_id: t.method.id, amount_minor: t.minor, reference: t.reference.trim() })),
         discount_minor: discount,
+        customer_id: customer?.id ?? "",
         note: "",
+        approval_token: token,
       })
+    try {
+      let res: SaleResult
+      try {
+        res = await submit(approvalToken)
+      } catch (e) {
+        // The earlier approval expired (2 min) or was never given: ask again.
+        if (!needsApproval || !/approval required/i.test(errorMessage(e))) throw e
+        const tok = await requestApproval("Approve the discount / price changes on this sale")
+        if (tok === null) return
+        res = await submit(tok)
+      }
       setResult(res)
       if (res.print_error) toast.warning("Sale saved, but the receipt didn’t print", { description: res.print_error })
     } catch (e) {

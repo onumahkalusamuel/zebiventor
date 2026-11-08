@@ -136,6 +136,11 @@ func TestFiveTillsOfflineFirst(t *testing.T) {
 		}
 	}
 	item, _ := terms[0].LookupCode(ctx, "9780385474542")
+	for _, tm := range terms {
+		if _, err := tm.OpenShift(ctx, admin, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// Search by author (an attribute) works.
 	found, _ := terms[0].SearchItems(ctx, "achebe", 10)
@@ -149,7 +154,7 @@ func TestFiveTillsOfflineFirst(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_, err := tm.RecordSale(ctx, admin, terminal.SaleInput{
+				_, err := tm.RecordSale(ctx, admin, nil, terminal.SaleInput{
 					Lines:    []terminal.CartLine{{VariantID: item.VariantID, QtyMilli: 1000}},
 					Payments: []terminal.PaymentInput{{MethodID: cash.ID, AmountMinor: 500000}},
 				})
@@ -196,20 +201,20 @@ func TestFiveTillsOfflineFirst(t *testing.T) {
 	}
 
 	// Validation still applies offline.
-	if _, err := terms[0].RecordSale(ctx, admin, terminal.SaleInput{
+	if _, err := terms[0].RecordSale(ctx, admin, nil, terminal.SaleInput{
 		Lines:    []terminal.CartLine{{VariantID: item.VariantID, QtyMilli: 1000}},
 		Payments: []terminal.PaymentInput{{MethodID: transfer.ID, AmountMinor: 350000}},
 	}); err == nil {
 		t.Fatal("transfer without reference accepted")
 	}
-	if _, err := terms[0].RecordSale(ctx, admin, terminal.SaleInput{
+	if _, err := terms[0].RecordSale(ctx, admin, nil, terminal.SaleInput{
 		Lines:    []terminal.CartLine{{VariantID: item.VariantID, QtyMilli: 1000}},
 		Payments: []terminal.PaymentInput{{MethodID: transfer.ID, AmountMinor: 400000, Reference: "x"}},
 	}); err == nil {
 		t.Fatal("non-cash overpayment accepted")
 	}
 	// Split payment: part transfer, part cash with change.
-	split, err := terms[0].RecordSale(ctx, admin, terminal.SaleInput{
+	split, err := terms[0].RecordSale(ctx, admin, nil, terminal.SaleInput{
 		Lines:    []terminal.CartLine{{VariantID: item.VariantID, QtyMilli: 2000}},
 		Payments: []terminal.PaymentInput{{MethodID: transfer.ID, AmountMinor: 500000, Reference: "TRF123"}, {MethodID: cash.ID, AmountMinor: 300000}},
 	})

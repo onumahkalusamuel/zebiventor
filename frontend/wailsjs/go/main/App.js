@@ -6,6 +6,14 @@ export function AdjustStock(arg1) {
   return window['go']['main']['App']['AdjustStock'](arg1);
 }
 
+export function Approve(arg1, arg2) {
+  return window['go']['main']['App']['Approve'](arg1, arg2);
+}
+
+export function CashMovement(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['CashMovement'](arg1, arg2, arg3, arg4);
+}
+
 export function Categories() {
   return window['go']['main']['App']['Categories']();
 }
@@ -14,12 +22,24 @@ export function CheckHub(arg1) {
   return window['go']['main']['App']['CheckHub'](arg1);
 }
 
+export function CloseShift(arg1, arg2) {
+  return window['go']['main']['App']['CloseShift'](arg1, arg2);
+}
+
+export function CompleteReturn(arg1) {
+  return window['go']['main']['App']['CompleteReturn'](arg1);
+}
+
 export function CompleteSale(arg1) {
   return window['go']['main']['App']['CompleteSale'](arg1);
 }
 
 export function CreatePairingCode(arg1) {
   return window['go']['main']['App']['CreatePairingCode'](arg1);
+}
+
+export function CurrentShift() {
+  return window['go']['main']['App']['CurrentShift']();
 }
 
 export function DiscoverHubs() {
@@ -38,6 +58,14 @@ export function GetState() {
   return window['go']['main']['App']['GetState']();
 }
 
+export function HeldSales() {
+  return window['go']['main']['App']['HeldSales']();
+}
+
+export function HoldSale(arg1) {
+  return window['go']['main']['App']['HoldSale'](arg1);
+}
+
 export function JoinHub(arg1, arg2, arg3) {
   return window['go']['main']['App']['JoinHub'](arg1, arg2, arg3);
 }
@@ -48,6 +76,10 @@ export function ListPrinters() {
 
 export function ListProducts(arg1) {
   return window['go']['main']['App']['ListProducts'](arg1);
+}
+
+export function ListShifts() {
+  return window['go']['main']['App']['ListShifts']();
 }
 
 export function ListTerminals() {
@@ -70,16 +102,36 @@ export function LookupCode(arg1) {
   return window['go']['main']['App']['LookupCode'](arg1);
 }
 
-export function OpenDrawer() {
-  return window['go']['main']['App']['OpenDrawer']();
+export function LookupForReturn(arg1) {
+  return window['go']['main']['App']['LookupForReturn'](arg1);
+}
+
+export function OpenDrawer(arg1) {
+  return window['go']['main']['App']['OpenDrawer'](arg1);
+}
+
+export function OpenShift(arg1) {
+  return window['go']['main']['App']['OpenShift'](arg1);
 }
 
 export function PaymentMethods() {
   return window['go']['main']['App']['PaymentMethods']();
 }
 
+export function PrintReturn(arg1, arg2) {
+  return window['go']['main']['App']['PrintReturn'](arg1, arg2);
+}
+
 export function PrintSale(arg1, arg2) {
   return window['go']['main']['App']['PrintSale'](arg1, arg2);
+}
+
+export function PrintShift(arg1) {
+  return window['go']['main']['App']['PrintShift'](arg1);
+}
+
+export function RecallHeldSale(arg1) {
+  return window['go']['main']['App']['RecallHeldSale'](arg1);
 }
 
 export function ReceiptPreview(arg1, arg2) {
@@ -94,12 +146,20 @@ export function RetryRejected() {
   return window['go']['main']['App']['RetryRejected']();
 }
 
+export function ReturnPreview(arg1, arg2) {
+  return window['go']['main']['App']['ReturnPreview'](arg1, arg2);
+}
+
 export function RevokeTerminal(arg1) {
   return window['go']['main']['App']['RevokeTerminal'](arg1);
 }
 
 export function SaveCategory(arg1) {
   return window['go']['main']['App']['SaveCategory'](arg1);
+}
+
+export function SaveCustomer(arg1) {
+  return window['go']['main']['App']['SaveCustomer'](arg1);
 }
 
 export function SavePaymentMethod(arg1) {
@@ -122,6 +182,10 @@ export function SaveUser(arg1) {
   return window['go']['main']['App']['SaveUser'](arg1);
 }
 
+export function SearchCustomers(arg1) {
+  return window['go']['main']['App']['SearchCustomers'](arg1);
+}
+
 export function SearchItems(arg1) {
   return window['go']['main']['App']['SearchItems'](arg1);
 }
@@ -134,6 +198,14 @@ export function SetupHost(arg1) {
   return window['go']['main']['App']['SetupHost'](arg1);
 }
 
+export function ShiftMovements(arg1) {
+  return window['go']['main']['App']['ShiftMovements'](arg1);
+}
+
+export function ShiftPreview(arg1) {
+  return window['go']['main']['App']['ShiftPreview'](arg1);
+}
+
 export function SyncNow() {
   return window['go']['main']['App']['SyncNow']();
 }
@@ -144,8 +216,4 @@ export function TestPreview(arg1) {
 
 export function TestPrint(arg1) {
   return window['go']['main']['App']['TestPrint'](arg1);
-}
-
-export function TodayTotals() {
-  return window['go']['main']['App']['TodayTotals']();
 }

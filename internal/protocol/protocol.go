@@ -38,6 +38,7 @@ const (
 	EntityBarcode       = "barcode"
 	EntityPaymentMethod = "payment_method"
 	EntityStockLevel    = "stock_level"
+	EntityCustomer      = "customer"
 )
 
 // ---------- master data (flows hub -> terminals) ----------
@@ -144,6 +145,10 @@ type Sale struct {
 	PaidMinor     int64         `json:"paid_minor"`
 	ChangeMinor   int64         `json:"change_minor"`
 	Note          string        `json:"note"`
+	ShiftID       string        `json:"shift_id"`
+	ApprovedBy    string        `json:"approved_by"` // manager who authorised discounts/overrides
+	CustomerName  string        `json:"customer_name"`
+	TaxMode       string        `json:"tax_mode"` // none | inclusive | exclusive
 	CreatedAt     int64         `json:"created_at"`
 	SyncedAt      int64         `json:"synced_at"`
 	Lines         []SaleLine    `json:"lines"`
@@ -161,9 +166,29 @@ type SaleLine struct {
 	UnitPriceMinor int64  `json:"unit_price_minor"`
 	DiscountMinor  int64  `json:"discount_minor"`
 	TaxMinor       int64  `json:"tax_minor"`
-	TotalMinor     int64  `json:"total_minor"`
+	TotalMinor     int64  `json:"total_minor"` // qty x unit price, before discount and exclusive tax
 	TrackStock     bool   `json:"track_stock"`
+	// OriginalPriceMinor is the catalogue price when the unit price was overridden.
+	OriginalPriceMinor int64 `json:"original_price_minor"`
+	TaxRateBP          int64 `json:"tax_rate_bp"`
 }
+
+// PaidMinor is what the customer actually paid for the line (after its
+// share of discounts, including exclusive tax): the basis for refunds.
+func (l SaleLine) PaidMinor(taxMode string) int64 {
+	paid := l.TotalMinor - l.DiscountMinor
+	if taxMode == TaxExclusive {
+		paid += l.TaxMinor
+	}
+	return paid
+}
+
+// Tax modes.
+const (
+	TaxNone      = "none"
+	TaxInclusive = "inclusive"
+	TaxExclusive = "exclusive"
+)
 
 type SalePayment struct {
 	ID          string `json:"id"`
@@ -177,7 +202,136 @@ type SalePayment struct {
 // ---------- sync messages ----------
 
 // Op kinds pushed from terminals.
-const OpSaleCreate = "sale.create"
+const (
+	OpSaleCreate     = "sale.create"
+	OpReturnCreate   = "return.create"
+	OpShiftOpen      = "shift.open"
+	OpShiftClose     = "shift.close"
+	OpCashMovement   = "cash.movement"
+	OpCustomerUpsert = "customer.upsert"
+)
+
+// Return is a refund against an earlier sale (from any till).
+type Return struct {
+	ID            string        `json:"id"`
+	ReturnNo      string        `json:"return_no"`
+	SaleID        string        `json:"sale_id"`
+	SaleReceiptNo string        `json:"sale_receipt_no"`
+	TerminalID    string        `json:"terminal_id"`
+	LocationID    string        `json:"location_id"`
+	UserID        string        `json:"user_id"`
+	UserName      string        `json:"user_name"`
+	ApprovedBy    string        `json:"approved_by"`
+	ShiftID       string        `json:"shift_id"`
+	CustomerID    string        `json:"customer_id"`
+	CustomerName  string        `json:"customer_name"`
+	Reason        string        `json:"reason"`
+	TaxMinor      int64         `json:"tax_minor"`
+	TotalMinor    int64         `json:"total_minor"` // amount refunded
+	CreatedAt     int64         `json:"created_at"`
+	SyncedAt      int64         `json:"synced_at"`
+	Lines         []ReturnLine  `json:"lines"`
+	Refunds       []SalePayment `json:"refunds"`
+}
+
+type ReturnLine struct {
+	ID          string `json:"id"`
+	SaleLineID  string `json:"sale_line_id"`
+	VariantID   string `json:"variant_id"`
+	ProductName string `json:"product_name"`
+	VariantName string `json:"variant_name"`
+	SKU         string `json:"sku"`
+	QtyMilli    int64  `json:"qty_milli"`
+	TaxMinor    int64  `json:"tax_minor"`
+	TotalMinor  int64  `json:"total_minor"` // refunded for this line
+	Restock     bool   `json:"restock"`
+	TrackStock  bool   `json:"track_stock"`
+}
+
+// Shift is one till session from opening float to cash count.
+type Shift struct {
+	ID                string        `json:"id"`
+	TerminalID        string        `json:"terminal_id"`
+	LocationID        string        `json:"location_id"`
+	Status            string        `json:"status"` // open | closed
+	OpenedBy          string        `json:"opened_by"`
+	OpenedByName      string        `json:"opened_by_name"`
+	OpenedAt          int64         `json:"opened_at"`
+	OpeningFloatMinor int64         `json:"opening_float_minor"`
+	ClosedBy          string        `json:"closed_by"`
+	ClosedByName      string        `json:"closed_by_name"`
+	ClosedAt          int64         `json:"closed_at"`
+	CountedCashMinor  int64         `json:"counted_cash_minor"`
+	Note              string        `json:"note"`
+	Summary           *ShiftSummary `json:"summary,omitempty"`
+}
+
+// ShiftSummary is the X (running) / Z (closing) report of a shift.
+type ShiftSummary struct {
+	SalesCount    int64         `json:"sales_count"`
+	ItemsMilli    int64         `json:"items_milli"`
+	GrossMinor    int64         `json:"gross_minor"`
+	DiscountMinor int64         `json:"discount_minor"`
+	TaxMinor      int64         `json:"tax_minor"`
+	NetSalesMinor int64         `json:"net_sales_minor"`
+	ReturnsCount  int64         `json:"returns_count"`
+	ReturnsMinor  int64         `json:"returns_minor"`
+	ByMethod      []MethodTotal `json:"by_method"`
+	OpeningFloat  int64         `json:"opening_float_minor"`
+	CashSales     int64         `json:"cash_sales_minor"` // cash tendered minus change
+	CashRefunds   int64         `json:"cash_refunds_minor"`
+	PaidIn        int64         `json:"paid_in_minor"`
+	PaidOut       int64         `json:"paid_out_minor"`
+	ExpectedCash  int64         `json:"expected_cash_minor"`
+	CountedCash   int64         `json:"counted_cash_minor"`
+	Variance      int64         `json:"variance_minor"`
+	Closed        bool          `json:"closed"`
+}
+
+type MethodTotal struct {
+	MethodName   string `json:"method_name"`
+	Kind         string `json:"kind"`
+	SalesMinor   int64  `json:"sales_minor"`
+	RefundsMinor int64  `json:"refunds_minor"`
+	NetMinor     int64  `json:"net_minor"`
+}
+
+// Cash movement kinds.
+const (
+	CashPaidIn  = "paid_in"
+	CashPaidOut = "paid_out"
+)
+
+type CashMovement struct {
+	ID          string `json:"id"`
+	ShiftID     string `json:"shift_id"`
+	Kind        string `json:"kind"`
+	AmountMinor int64  `json:"amount_minor"`
+	Reason      string `json:"reason"`
+	UserID      string `json:"user_id"`
+	UserName    string `json:"user_name"`
+	ApprovedBy  string `json:"approved_by"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+// Customer is shared across all tills. BalanceMinor (amount owed on
+// account) is maintained by the hub only.
+type Customer struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Phone        string `json:"phone"`
+	Email        string `json:"email"`
+	Notes        string `json:"notes"`
+	Active       bool   `json:"active"`
+	BalanceMinor int64  `json:"balance_minor"`
+	UpdatedAt    int64  `json:"updated_at"`
+}
+
+// SaleLookup answers "what was sold on receipt X and what has been returned".
+type SaleLookup struct {
+	Sale     Sale             `json:"sale"`
+	Returned map[string]int64 `json:"returned"` // sale_line_id -> qty milli already returned
+}
 
 // Op is one durable outbox entry. ID is a ULID created on the terminal and
 // is the idempotency key: the hub applies each op at most once.
@@ -222,6 +376,7 @@ type PullResponse struct {
 	Barcodes       []Barcode       `json:"barcodes,omitempty"`
 	PaymentMethods []PaymentMethod `json:"payment_methods,omitempty"`
 	StockLevels    []StockLevel    `json:"stock_levels,omitempty"`
+	Customers      []Customer      `json:"customers,omitempty"`
 }
 
 // ---------- pairing & auth ----------

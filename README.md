@@ -53,6 +53,27 @@ without `SQLITE_BUSY`; the benchmark sustains ~250k small writes/sec on an M-ser
 - *Stock* is an append-only ledger (`stock_movements`) plus running levels,
   so concurrent offline sales from many tills merge without conflicts.
 
+**Point of sale (phase 2).**
+- *Shifts:* every sale and refund belongs to a shift opened with a cash float.
+  Closing is a blind count for cashiers (NGN note counter); the Z report shows
+  expected vs counted cash and the variance, which is also flagged at the hub.
+  Paid in / paid out are recorded per shift.
+- *Manager approval:* discounts, price overrides, refunds, paid-outs and
+  "no sale" drawer opens need a manager. A manager signs in on the cashier's
+  till without ending their session, which issues a single-use, 2-minute
+  approval that is consumed only when the action succeeds. The approver is stored on the record.
+- *Tax:* none / inclusive / exclusive, with a rate per product. Cart discounts
+  are spread across lines (largest remainder) before tax. `frontend/src/lib/pricing.ts`
+  mirrors the Go maths exactly; a fixture test cross-checks 2,000 random carts.
+- *Returns:* by receipt number or the receipt's QR code. Sales from this till
+  work offline; other tills' sales are looked up at the hub, which also
+  reports what was already returned, so the same item can't be refunded twice. Refunds are
+  proportional to what was actually paid, optionally restocked, and can go
+  back to a customer's account.
+- *Customers:* created on any till (even offline) and shared with all tills
+  (last write wins). Sales "on account" increase the balance, which the hub keeps.
+- *Hold / recall:* park a cart on the till and recall it later (F8).
+
 **Money and quantities** are integers: kobo (minor units) and milli-units
 (1.250 kg = 1250).
 

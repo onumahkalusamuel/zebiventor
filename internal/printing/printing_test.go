@@ -140,6 +140,33 @@ func TestWritePreviews(t *testing.T) {
 	if dir == "" {
 		t.Skip("set RECEIPT_PREVIEW_DIR to write PNG previews")
 	}
+	write := func(name string, r Receipt) {
+		img, err := Render(Layout(r, Paper80.Cols), Paper80)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f, _ := os.Create(filepath.Join(dir, name))
+		png.Encode(f, img)
+		f.Close()
+	}
+	taxed := sale(2)
+	taxed.TaxMode, taxed.TaxMinor, taxed.CustomerName, taxed.DiscountMinor = protocol.TaxInclusive, 97674, "Chidi Okeke", 50000
+	taxed.Lines[0].OriginalPriceMinor = 400000
+	st := map[string]string{"tax_name": "VAT", "tax_mode": "inclusive"}
+	for k, v := range settings {
+		st[k] = v
+	}
+	write("receipt-taxed.png", FromSale(taxed, st, ngn, "Till 1", false))
+	write("refund.png", FromReturn(&protocol.Return{ReturnNo: "T02-R00001", SaleReceiptNo: "T01-000042", UserName: "Musa", CreatedAt: 1762600000000,
+		CustomerName: "Chidi Okeke", Reason: "Damaged spine", TotalMinor: 400000, TaxMinor: 27907,
+		Lines:   []protocol.ReturnLine{{ProductName: "Things Fall Apart", QtyMilli: 1000, TotalMinor: 400000, Restock: false}},
+		Refunds: []protocol.SalePayment{{MethodName: "Cash", AmountMinor: 400000}}}, st, ngn, "Till 2", false))
+	write("z-report.png", ShiftReport(&protocol.Shift{Status: "closed", OpenedAt: 1762590000000, OpenedByName: "Kemi", ClosedAt: 1762620000000, ClosedByName: "Kemi",
+		Note: "Short by 500", Summary: &protocol.ShiftSummary{SalesCount: 3, ItemsMilli: 4000, GrossMinor: 1800000, DiscountMinor: 100000, TaxMinor: 89564,
+			NetSalesMinor: 1767500, ReturnsCount: 1, ReturnsMinor: 483750, OpeningFloat: 1000000, CashSales: 1283750, CashRefunds: 483750, PaidIn: 50000,
+			PaidOut: 120000, ExpectedCash: 1730000, CountedCash: 1680000, Variance: -50000, Closed: true,
+			ByMethod: []protocol.MethodTotal{{MethodName: "Cash", Kind: "cash", SalesMinor: 1283750, RefundsMinor: 483750, NetMinor: 800000},
+				{MethodName: "On account", Kind: "credit", SalesMinor: 483750, NetMinor: 483750}}}}, st, ngn, "Till 1"))
 	for name, n := range map[string]int{"receipt-short.png": 1, "receipt-long.png": 12} {
 		img, err := Render(Layout(FromSale(sale(n), settings, ngn, "Till 1", false), Paper80.Cols), Paper80)
 		if err != nil {

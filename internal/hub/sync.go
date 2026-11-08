@@ -187,6 +187,13 @@ func fetchChunk(ctx context.Context, tx *sql.Tx, entity string, idList []string,
 			resp.PaymentMethods = append(resp.PaymentMethods, m)
 			return err
 		})
+	case protocol.EntityCustomer:
+		return q("SELECT id,name,phone,email,notes,active,balance_minor,updated_at FROM customers WHERE id IN ("+in+")", func(r *sql.Rows) error {
+			var c protocol.Customer
+			err := r.Scan(&c.ID, &c.Name, &c.Phone, &c.Email, &c.Notes, &c.Active, &c.BalanceMinor, &c.UpdatedAt)
+			resp.Customers = append(resp.Customers, c)
+			return err
+		})
 	case protocol.EntityStockLevel:
 		// entity_id is "variant|location"; query each explicitly.
 		for _, key := range idList {
@@ -243,6 +250,16 @@ func (h *Hub) applyOp(ctx context.Context, t *Terminal, op protocol.Op) (protoco
 		switch op.Kind {
 		case protocol.OpSaleCreate:
 			applyErr = h.applySale(ctx, tx, t, op)
+		case protocol.OpReturnCreate:
+			applyErr = h.applyReturn(ctx, tx, t, op)
+		case protocol.OpShiftOpen:
+			applyErr = h.applyShiftOpen(ctx, tx, t, op)
+		case protocol.OpShiftClose:
+			applyErr = h.applyShiftClose(ctx, tx, t, op)
+		case protocol.OpCashMovement:
+			applyErr = h.applyCashMovement(ctx, tx, t, op)
+		case protocol.OpCustomerUpsert:
+			applyErr = h.applyCustomer(ctx, tx, t, op)
 		default:
 			applyErr = invalid("unsupported op kind %q", op.Kind)
 		}
@@ -319,16 +336,24 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 	for _, p := range s.Payments {
 		paid += p.AmountMinor
 	}
-	if sub != s.SubtotalMinor || paid != s.PaidMinor || s.TotalMinor != s.SubtotalMinor-s.DiscountMinor+s.TaxMinor {
+	wantTotal := s.SubtotalMinor - s.DiscountMinor
+	if s.TaxMode == protocol.TaxExclusive {
+		wantTotal += s.TaxMinor
+	}
+	if sub != s.SubtotalMinor || paid != s.PaidMinor || s.TotalMinor != wantTotal {
 		audit(ctx, tx, s.UserID, t.ID, "sale.totals_mismatch", "sale", s.ID,
 			map[string]any{"lines_sum": sub, "subtotal": s.SubtotalMinor, "payments_sum": paid, "paid": s.PaidMinor, "total": s.TotalMinor})
 	}
 
+	if s.TaxMode == "" {
+		s.TaxMode = protocol.TaxNone
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sales(id,receipt_no,terminal_id,location_id,user_id,user_name,customer_id,status,
-		subtotal_minor,discount_minor,tax_minor,total_minor,paid_minor,change_minor,note,created_at,received_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		subtotal_minor,discount_minor,tax_minor,total_minor,paid_minor,change_minor,note,created_at,received_at,shift_id,approved_by,tax_mode)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		s.ID, s.ReceiptNo, t.ID, loc, s.UserID, s.UserName, s.CustomerID, s.Status,
-		s.SubtotalMinor, s.DiscountMinor, s.TaxMinor, s.TotalMinor, s.PaidMinor, s.ChangeMinor, s.Note, s.CreatedAt, now); err != nil {
+		s.SubtotalMinor, s.DiscountMinor, s.TaxMinor, s.TotalMinor, s.PaidMinor, s.ChangeMinor, s.Note, s.CreatedAt, now,
+		s.ShiftID, s.ApprovedBy, s.TaxMode); err != nil {
 		return err
 	}
 
@@ -339,9 +364,9 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 		if l.LineNo == 0 {
 			l.LineNo = i + 1
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sale_lines(id,sale_id,line_no,variant_id,product_name,variant_name,sku,qty_milli,unit_price_minor,discount_minor,tax_minor,total_minor)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, l.ID, s.ID, l.LineNo, l.VariantID, l.ProductName, l.VariantName, l.SKU,
-			l.QtyMilli, l.UnitPriceMinor, l.DiscountMinor, l.TaxMinor, l.TotalMinor); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sale_lines(id,sale_id,line_no,variant_id,product_name,variant_name,sku,qty_milli,unit_price_minor,discount_minor,tax_minor,total_minor,original_price_minor,tax_rate_bp)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, l.ID, s.ID, l.LineNo, l.VariantID, l.ProductName, l.VariantName, l.SKU,
+			l.QtyMilli, l.UnitPriceMinor, l.DiscountMinor, l.TaxMinor, l.TotalMinor, l.OriginalPriceMinor, l.TaxRateBP); err != nil {
 			return err
 		}
 
@@ -366,6 +391,7 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 		}
 	}
 
+	var onAccount int64
 	for _, p := range s.Payments {
 		if p.ID == "" {
 			p.ID = ids.New()
@@ -374,8 +400,11 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 			p.ID, s.ID, p.MethodID, p.MethodName, p.Kind, p.AmountMinor, p.Reference); err != nil {
 			return err
 		}
+		if p.Kind == protocol.PayCredit {
+			onAccount += p.AmountMinor
+		}
 	}
-	return nil
+	return adjustBalance(ctx, tx, s.CustomerID, onAccount, s.UserID, t.ID, "sale", s.ID)
 }
 
 type stockMove struct {

@@ -1,5 +1,7 @@
 import { useEffect, useState, type ComponentType } from "react"
-import { Boxes, LogOut, MonitorSmartphone, Moon, Receipt, Settings as SettingsIcon, ShoppingCart, Sun, Users } from "lucide-react"
+import { Boxes, Clock, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
+import { ApprovalProvider } from "@/components/approval"
+import { useShift } from "@/components/shift-gate"
 import { LogoMark } from "@/components/brand"
 import { SyncPill } from "@/components/sync-pill"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -14,12 +16,19 @@ import { Products } from "./products"
 import { Team } from "./team"
 import { Tills } from "./tills"
 import { Settings } from "./settings"
+import { Returns } from "./returns"
+import { Shift } from "./shift"
+import { Customers } from "./customers"
+import { formatDateTime } from "@/lib/format"
 
-type PageKey = "sell" | "sales" | "products" | "team" | "tills" | "settings"
+type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "team" | "tills" | "settings"
 
 const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: string }>; roles: Role[]; el: ComponentType }[] = [
   { key: "sell", label: "Sell", icon: ShoppingCart, roles: ["admin", "manager", "cashier"], el: Sell },
+  { key: "returns", label: "Returns", icon: RotateCcw, roles: ["admin", "manager", "cashier"], el: Returns },
   { key: "sales", label: "Sales", icon: Receipt, roles: ["admin", "manager", "cashier"], el: Sales },
+  { key: "shift", label: "Shift", icon: Wallet, roles: ["admin", "manager", "cashier"], el: Shift },
+  { key: "customers", label: "Customers", icon: UserRound, roles: ["admin", "manager", "cashier"], el: Customers },
   { key: "products", label: "Products", icon: Boxes, roles: ["admin", "manager", "inventory", "cashier"], el: Products },
   { key: "team", label: "Team", icon: Users, roles: ["admin"], el: Team },
   { key: "tills", label: "Tills", icon: MonitorSmartphone, roles: ["admin", "manager"], el: Tills },
@@ -55,6 +64,26 @@ function useTheme() {
 }
 
 export function Shell() {
+  return (
+    <ApprovalProvider>
+      <ShellInner />
+    </ApprovalProvider>
+  )
+}
+
+function ShiftChip() {
+  const shift = useShift()
+  if (shift.isLoading) return null
+  return shift.data ? (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`Opened ${formatDateTime(shift.data.opened_at)} by ${shift.data.opened_by_name}`}>
+      <Clock className="size-3.5" /> Shift open since {new Date(shift.data.opened_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+    </div>
+  ) : (
+    <div className="text-xs font-medium text-amber-700 dark:text-amber-400">No shift open</div>
+  )
+}
+
+function ShellInner() {
   const state = useLoadedState()
   const { refresh } = useAppState()
   const role = state.user!.role
@@ -68,6 +97,7 @@ export function Shell() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "F1") setPage("sell")
+      if (e.key === "F2") setPage("returns")
       if (e.key === "F3") setPage("sales")
     }
     window.addEventListener("keydown", onKey)
@@ -81,14 +111,14 @@ export function Shell() {
 
   return (
     <div className="flex h-full">
-      <nav className="flex w-[76px] shrink-0 flex-col items-center gap-1 bg-sidebar py-3 text-sidebar-foreground">
+      <nav className="flex w-[76px] shrink-0 flex-col items-center gap-0.5 overflow-y-auto bg-sidebar py-3 text-sidebar-foreground">
         <LogoMark className="mb-4 size-9" />
         {allowed.map((p) => (
           <button
             key={p.key}
             onClick={() => setPage(p.key)}
             className={cn(
-              "flex w-[64px] flex-col items-center gap-1 rounded-xl py-2.5 text-[11px] font-medium transition-colors",
+              "flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium transition-colors",
               page === p.key
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
@@ -128,6 +158,7 @@ export function Shell() {
             </div>
           </div>
           <div className="ml-auto flex items-center gap-4">
+            <ShiftChip />
             <SyncPill status={state.status} />
             <div className="text-right">
               <div className="text-sm font-medium tabular">{now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
