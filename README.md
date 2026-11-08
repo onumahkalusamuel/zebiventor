@@ -74,6 +74,37 @@ without `SQLITE_BUSY`; the benchmark sustains ~250k small writes/sec on an M-ser
   (last write wins). Sales "on account" increase the balance, which the hub keeps.
 - *Hold / recall:* park a cart on the till and recall it later (F8).
 
+**Back office (phase 3).** Screens for managers and stock staff that work on
+the hub's records, so they need the hub to be reachable. Selling stays offline-capable.
+- *Purchasing:* suppliers, purchase orders (draft, then ordered, then part
+  received or received), and goods received against an order or without one.
+  Receiving updates stock straight away. Each item's cost becomes the weighted
+  average of stock on hand and the delivery, and the selling price can change
+  in the same step. "Add low-stock items" fills an order up to twice each item's reorder level.
+- *Stock counts:* count a location or one category while still trading.
+  Every counted item is compared with the stock ledger *as of the moment it
+  was counted*, and the correction is dated then. Sales before and after the
+  count are therefore both accounted for. Several people can count at once
+  (scan +1 or type a total). Optionally, items not counted are set to zero.
+  If a till hasn't synced since counting began, you get a warning.
+- *Locations and transfers:* shop floor, store room, warehouse. A transfer
+  moves stock out of one location and into another in one step.
+- *Stock levels:* on hand, reorder level, 30-day sales, value at cost and at
+  retail, low/out filters, and a per-item ledger with running balance. Export to CSV.
+- *Customer accounts:* any till can take a payment on account, even offline.
+  The payment belongs to the shift (cash counts towards the drawer) and prints
+  a receipt. The hub keeps a full statement (sales on account, refunds,
+  payments, adjustments). Admins can enter opening balances or write-offs.
+- *Reports:* sales and gross profit by day, hour, weekday, item, category,
+  cashier, till, customer or location, net of returns. A return that isn't
+  restocked keeps its cost as a loss. Also: money in by payment method, shifts
+  with cash variances, and an activity log. Everything exports to CSV.
+- *Catalogue import/export:* CSV with flexible headers (name/title, price,
+  cost, barcode/ISBN, category, any extra column becomes a product detail). It
+  previews (dry run) before applying; rows with problems are listed and skipped.
+- *Approval rules:* each manager-approval requirement (discount, price
+  change, refund, paid out, no sale) can be switched off in Settings.
+
 **Money and quantities** are integers: kobo (minor units) and milli-units
 (1.250 kg = 1250).
 

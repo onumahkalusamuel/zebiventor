@@ -17,17 +17,21 @@ import { useMoney } from "@/lib/state"
 export function Sales() {
   const { fmt } = useMoney()
   const [q, setQ] = useState("")
-  const [openSale, setOpenSale] = useState<{ id: string; kind: "sale" | "return" } | null>(null)
+  const [openSale, setOpenSale] = useState<{ id: string; kind: "sale" | "return" | "payment" } | null>(null)
   const sales = useQuery({ queryKey: ["sales", q], queryFn: () => api.recentSales(q) })
   const shift = useShift()
   const sum = shift.data?.summary
 
   return (
     <Page>
-      <PageHeader title="Sales" description="Sales and refunds made on this till. Figures are for the current shift." />
+      <PageHeader title="Sales" description="Sales, refunds and payments on account taken at this till. Figures are for the current shift." />
       <div className="space-y-6 px-8 pb-8">
         <div className="grid grid-cols-4 gap-3">
-          <StatCard label="Shift takings" value={fmt((sum?.net_sales_minor ?? 0) - (sum?.returns_minor ?? 0))} sub={shift.data ? `${sum?.sales_count ?? 0} sales` : "No shift open"} />
+          <StatCard
+            label="Shift takings"
+            value={fmt((sum?.net_sales_minor ?? 0) - (sum?.returns_minor ?? 0) + (sum?.account_payments_minor ?? 0))}
+            sub={shift.data ? `${sum?.sales_count ?? 0} sales${sum?.account_payments_count ? ` · ${sum.account_payments_count} on account` : ""}` : "No shift open"}
+          />
           {(sum?.by_method ?? []).slice(0, 2).map((m) => (
             <StatCard key={m.method_name} label={m.method_name} value={fmt(m.net_minor)} />
           ))}
@@ -61,6 +65,7 @@ export function Sales() {
                     <TableCell className="pl-4 font-medium tabular">
                       {s.receipt_no}
                       {s.kind === "return" && <Badge variant="outline" className="ml-2 border-red-500/40 text-red-700 dark:text-red-400">Refund</Badge>}
+                      {s.kind === "payment" && <Badge variant="outline" className="ml-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-400">On account</Badge>}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{formatDateTime(s.created_at)}</TableCell>
                     <TableCell>
@@ -68,7 +73,7 @@ export function Sales() {
                       {s.customer && <div className="text-xs text-muted-foreground">{s.customer}</div>}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{s.methods}</TableCell>
-                    <TableCell className="text-right tabular">{formatQty(s.items)}</TableCell>
+                    <TableCell className="text-right tabular">{s.kind === "payment" ? "" : formatQty(s.items)}</TableCell>
                     <TableCell className={cn("text-right font-semibold tabular", s.total_minor < 0 && "text-red-600")}>{fmt(s.total_minor)}</TableCell>
                     <TableCell className="pr-4">
                       {s.synced ? <CloudCheck className="size-4 text-emerald-600" /> : <CloudUpload className="size-4 text-amber-600" />}
@@ -85,13 +90,14 @@ export function Sales() {
   )
 }
 
-function SaleSheet({ target, onClose }: { target: { id: string; kind: "sale" | "return" } | null; onClose: () => void }) {
+function SaleSheet({ target, onClose }: { target: { id: string; kind: "sale" | "return" | "payment" } | null; onClose: () => void }) {
   const id = target?.id ?? null
   const isReturn = target?.kind === "return"
-  const sale = useQuery({ queryKey: ["sale", id], queryFn: () => api.getSale(id!), enabled: !!id && !isReturn })
+  const isPayment = target?.kind === "payment"
+  const sale = useQuery({ queryKey: ["sale", id], queryFn: () => api.getSale(id!), enabled: !!id && !isReturn && !isPayment })
   const preview = useQuery({
     queryKey: ["preview", id],
-    queryFn: () => (isReturn ? api.returnPreview(id!, true) : api.receiptPreview(id!, true)),
+    queryFn: () => (isReturn ? api.returnPreview(id!, true) : isPayment ? api.accountPaymentPreview(id!, true) : api.receiptPreview(id!, true)),
     enabled: !!id,
   })
   const [printing, setPrinting] = useState(false)
@@ -100,7 +106,7 @@ function SaleSheet({ target, onClose }: { target: { id: string; kind: "sale" | "
     if (!id) return
     setPrinting(true)
     try {
-      await (isReturn ? api.printReturn(id, true) : api.printSale(id, true))
+      await (isReturn ? api.printReturn(id, true) : isPayment ? api.printAccountPayment(id) : api.printSale(id, true))
       toast.success("Reprint sent to printer")
     } catch (e) {
       toast.error(errorMessage(e))
@@ -113,9 +119,9 @@ function SaleSheet({ target, onClose }: { target: { id: string; kind: "sale" | "
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-[480px] gap-0 sm:max-w-[480px]">
         <SheetHeader className="border-b">
-          <SheetTitle>{isReturn ? "Refund slip" : `Receipt ${sale.data?.receipt_no ?? ""}`}</SheetTitle>
+          <SheetTitle>{isReturn ? "Refund slip" : isPayment ? "Payment on account" : `Receipt ${sale.data?.receipt_no ?? ""}`}</SheetTitle>
           <SheetDescription>
-            {isReturn
+            {isReturn || isPayment
               ? "Reprints are marked as such."
               : sale.data && `${formatDateTime(sale.data.created_at)} · ${sale.data.user_name} · ${sale.data.synced_at ? "synced to hub" : "not yet synced"}`}
           </SheetDescription>
@@ -130,7 +136,7 @@ function SaleSheet({ target, onClose }: { target: { id: string; kind: "sale" | "
         <div className="border-t p-4">
           <Button className="h-11 w-full" onClick={reprint} disabled={printing}>
             {printing ? <Loader2 className="animate-spin" /> : <Printer />}
-            {isReturn ? "Reprint refund slip" : "Reprint receipt"}
+            {isReturn ? "Reprint refund slip" : isPayment ? "Reprint payment receipt" : "Reprint receipt"}
           </Button>
         </div>
       </SheetContent>

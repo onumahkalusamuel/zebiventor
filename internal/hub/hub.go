@@ -277,7 +277,7 @@ func putSetting(ctx context.Context, tx *sql.Tx, key, value string, now int64) e
 	if err != nil {
 		return err
 	}
-	if privateSettings[key] {
+	if privateSettings[key] || strings.HasPrefix(key, "seq.") {
 		return nil
 	}
 	return recordChange(ctx, tx, protocol.EntitySetting, key)

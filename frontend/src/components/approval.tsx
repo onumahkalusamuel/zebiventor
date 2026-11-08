@@ -10,11 +10,15 @@ import { useLoadedState } from "@/lib/state"
 
 /**
  * requestApproval(reason) resolves to:
- *  - ""      the signed-in user is a manager (self-approved),
+ *  - ""      the signed-in user is a manager (self-approved), or the store
+ *            does not require approval for this action,
  *  - token   a manager approved on this till (single use, 2 minutes),
  *  - null    cancelled.
  */
-type Request = (reason: string) => Promise<string | null>
+type Request = (reason: string, action?: ApprovalAction) => Promise<string | null>
+
+/** Actions whose approval rule can be switched off in Settings. */
+export type ApprovalAction = "discount" | "price_override" | "refund" | "paid_out" | "no_sale"
 
 const Ctx = createContext<Request>(async () => null)
 
@@ -41,8 +45,9 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
   }, [reason])
 
   const request = useCallback<Request>(
-    (why) => {
+    (why, action) => {
       if (atLeast(state.user?.role, "manager")) return Promise.resolve("")
+      if (action && state.settings["approval_" + action] === "0") return Promise.resolve("")
       resolver.current?.(null) // a newer request supersedes a pending one
       setReason(why)
       setUsername("")
@@ -50,7 +55,7 @@ export function ApprovalProvider({ children }: { children: ReactNode }) {
       setError("")
       return new Promise((resolve) => (resolver.current = resolve))
     },
-    [state.user?.role],
+    [state.user?.role, state.settings],
   )
 
   function finish(v: string | null) {

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -580,7 +581,7 @@ func (a *App) OpenDrawer(approvalToken string) error {
 		return err
 	}
 	approver := a.takeApproval(approvalToken)
-	if !terminal.IsManager(u.Role) && approver == nil {
+	if !terminal.IsManager(u.Role) && approver == nil && a.term.NeedsApproval(a.ctx, terminal.ApproveNoSale) {
 		return terminal.ErrApprovalRequired
 	}
 	a.consumeApproval(approvalToken)
@@ -663,6 +664,109 @@ func (a *App) SavePaymentMethod(m protocol.PaymentMethod) (string, error) {
 	var r idResp
 	err := a.term.Admin(a.ctx, http.MethodPost, "/api/admin/payment-methods", m, &r)
 	return r.ID, err
+}
+
+// ---------- back office ----------
+
+// HubCall performs an authenticated back-office API call at the hub and
+// returns the JSON response. The hub enforces roles; only admin endpoints
+// can be reached this way.
+func (a *App) HubCall(method, path, body string) (string, error) {
+	if _, err := a.currentUser(); err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(path, "/api/admin/") || strings.Contains(path, "..") {
+		return "", errors.New("not a back-office endpoint")
+	}
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete:
+	default:
+		return "", errors.New("unsupported method")
+	}
+	var in any
+	if body != "" {
+		in = json.RawMessage(body)
+	}
+	var out json.RawMessage
+	if err := a.term.Admin(a.ctx, method, path, in, &out); err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// SaveTextFile asks where to save a file (CSV export, report) and writes it.
+// It returns the chosen path, or "" if the user cancelled.
+func (a *App) SaveTextFile(defaultName, content string) (string, error) {
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		DefaultFilename: defaultName,
+		Filters:         []runtime.FileFilter{{DisplayName: "CSV files (*.csv)", Pattern: "*.csv"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	// Excel opens UTF-8 CSV correctly (₦, accents) only with a BOM.
+	if strings.HasSuffix(strings.ToLower(path), ".csv") && !strings.HasPrefix(content, "\ufeff") {
+		content = "\ufeff" + content
+	}
+	return path, os.WriteFile(path, []byte(content), 0o644)
+}
+
+// ---------- payments on account ----------
+
+// AccountPaymentResult is returned after taking a payment on account.
+type AccountPaymentResult struct {
+	Payment    *protocol.AccountPayment `json:"payment"`
+	Printed    bool                     `json:"printed"`
+	PrintError string                   `json:"print_error"`
+}
+
+// ReceiveAccountPayment records money paid towards a customer's balance and prints a receipt.
+func (a *App) ReceiveAccountPayment(in terminal.AccountPaymentInput) (AccountPaymentResult, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return AccountPaymentResult{}, err
+	}
+	p, err := a.term.RecordAccountPayment(a.ctx, u, in)
+	if err != nil {
+		return AccountPaymentResult{}, err
+	}
+	res := AccountPaymentResult{Payment: p}
+	pc := a.GetPrinterConfig()
+	openDrawer := false
+	if pc.OpenDrawer {
+		methods, _ := a.term.PaymentMethods(a.ctx)
+		for _, m := range methods {
+			if m.ID == p.MethodID && m.OpensDrawer {
+				openDrawer = true
+			}
+		}
+	}
+	if pc.Target.Kind != printing.TransportNone && pc.Target.Kind != "" {
+		if err := a.sendReceipt(printing.FromAccountPayment(p, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName(), false), pc, openDrawer); err != nil {
+			res.PrintError = err.Error()
+		} else {
+			res.Printed = true
+		}
+	}
+	return res, nil
+}
+
+// AccountPaymentPreview renders a payment receipt.
+func (a *App) AccountPaymentPreview(id string, reprint bool) (string, error) {
+	p, err := a.term.GetAccountPayment(a.ctx, id)
+	if err != nil {
+		return "", err
+	}
+	return a.previewReceipt(printing.FromAccountPayment(p, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName(), reprint))
+}
+
+// PrintAccountPayment reprints a payment receipt.
+func (a *App) PrintAccountPayment(id string) error {
+	p, err := a.term.GetAccountPayment(a.ctx, id)
+	if err != nil {
+		return err
+	}
+	return a.sendReceipt(printing.FromAccountPayment(p, a.term.Settings(a.ctx), a.term.Currency(a.ctx), a.terminalName(), true), a.GetPrinterConfig(), false)
 }
 
 // ---------- approvals ----------

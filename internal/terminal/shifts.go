@@ -90,7 +90,7 @@ func (t *Terminal) AddCashMovement(ctx context.Context, u User, approver *User, 
 	}
 	m := &protocol.CashMovement{ID: ids.New(), Kind: kind, AmountMinor: amount, Reason: strings.TrimSpace(reason), UserID: u.ID, UserName: u.Name}
 	if kind == protocol.CashPaidOut {
-		by, err := approvedBy(u, approver)
+		by, err := t.authorise(ctx, u, approver, ApprovePaidOut)
 		if err != nil {
 			return nil, err
 		}
@@ -259,6 +259,23 @@ func (t *Terminal) shiftSummary(ctx context.Context, q querier, s *protocol.Shif
 	}
 	rows.Close()
 
+	rows, err = q.QueryContext(ctx, `SELECT method_name, kind, count(*), sum(amount_minor) FROM account_payments WHERE shift_id=? GROUP BY method_name, kind`, s.ID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var name, kind string
+		var n, amt int64
+		rows.Scan(&name, &kind, &n, &amt)
+		get(name, kind).PaymentsMinor += amt
+		sum.AccountCount += n
+		sum.AccountMinor += amt
+		if kind == protocol.PayCash {
+			sum.CashAccount += amt
+		}
+	}
+	rows.Close()
+
 	// Change is handed out in cash: net it off the (first) cash method.
 	if change > 0 {
 		var cashName string
@@ -273,7 +290,7 @@ func (t *Terminal) shiftSummary(ctx context.Context, q querier, s *protocol.Shif
 		get(cashName, protocol.PayCash).SalesMinor -= change
 	}
 	for _, m := range methods {
-		m.NetMinor = m.SalesMinor - m.RefundsMinor
+		m.NetMinor = m.SalesMinor - m.RefundsMinor + m.PaymentsMinor
 		if m.Kind == protocol.PayCash {
 			sum.CashSales += m.SalesMinor
 			sum.CashRefunds += m.RefundsMinor
@@ -284,7 +301,7 @@ func (t *Terminal) shiftSummary(ctx context.Context, q querier, s *protocol.Shif
 
 	q.QueryRowContext(ctx, `SELECT COALESCE(sum(CASE WHEN kind='paid_in' THEN amount_minor END),0), COALESCE(sum(CASE WHEN kind='paid_out' THEN amount_minor END),0)
 		FROM cash_movements WHERE shift_id=?`, s.ID).Scan(&sum.PaidIn, &sum.PaidOut)
-	sum.ExpectedCash = sum.OpeningFloat + sum.CashSales - sum.CashRefunds + sum.PaidIn - sum.PaidOut
+	sum.ExpectedCash = sum.OpeningFloat + sum.CashSales - sum.CashRefunds + sum.CashAccount + sum.PaidIn - sum.PaidOut
 	return sum, nil
 }
 
@@ -364,7 +381,7 @@ func (t *Terminal) SearchCustomers(ctx context.Context, query string, limit int)
 		args = append(args, "%"+escapeLike(w)+"%")
 	}
 	args = append(args, limit)
-	rows, err := t.db.R().QueryContext(ctx, `SELECT id,name,phone,email,notes,active,balance_minor,updated_at FROM customers WHERE `+
+	rows, err := t.db.R().QueryContext(ctx, `SELECT id,name,phone,email,notes,active,balance_minor+`+pendingBalance+`,updated_at FROM customers WHERE `+
 		strings.Join(where, " AND ")+` ORDER BY active DESC, name COLLATE NOCASE LIMIT ?`, args...)
 	if err != nil {
 		return nil, err

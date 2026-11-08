@@ -167,9 +167,9 @@ func fetchChunk(ctx context.Context, tx *sql.Tx, entity string, idList []string,
 			return nil
 		})
 	case protocol.EntityVariant:
-		return q("SELECT id,product_id,name,sku,price_minor,cost_minor,active FROM variants WHERE id IN ("+in+")", func(r *sql.Rows) error {
+		return q("SELECT id,product_id,name,sku,price_minor,cost_minor,active,reorder_level_milli FROM variants WHERE id IN ("+in+")", func(r *sql.Rows) error {
 			var v protocol.Variant
-			err := r.Scan(&v.ID, &v.ProductID, &v.Name, &v.SKU, &v.PriceMinor, &v.CostMinor, &v.Active)
+			err := r.Scan(&v.ID, &v.ProductID, &v.Name, &v.SKU, &v.PriceMinor, &v.CostMinor, &v.Active, &v.ReorderLevelMilli)
 			resp.Variants = append(resp.Variants, v)
 			return err
 		})
@@ -260,6 +260,8 @@ func (h *Hub) applyOp(ctx context.Context, t *Terminal, op protocol.Op) (protoco
 			applyErr = h.applyCashMovement(ctx, tx, t, op)
 		case protocol.OpCustomerUpsert:
 			applyErr = h.applyCustomer(ctx, tx, t, op)
+		case protocol.OpAccountPayment:
+			applyErr = h.applyAccountPayment(ctx, tx, t, op)
 		default:
 			applyErr = invalid("unsupported op kind %q", op.Kind)
 		}
@@ -364,9 +366,12 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 		if l.LineNo == 0 {
 			l.LineNo = i + 1
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sale_lines(id,sale_id,line_no,variant_id,product_name,variant_name,sku,qty_milli,unit_price_minor,discount_minor,tax_minor,total_minor,original_price_minor,tax_rate_bp)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, l.ID, s.ID, l.LineNo, l.VariantID, l.ProductName, l.VariantName, l.SKU,
-			l.QtyMilli, l.UnitPriceMinor, l.DiscountMinor, l.TaxMinor, l.TotalMinor, l.OriginalPriceMinor, l.TaxRateBP); err != nil {
+		// Cost of goods sold is the item's (weighted average) cost when the hub records the sale.
+		var cost int64
+		tx.QueryRowContext(ctx, "SELECT cost_minor FROM variants WHERE id=?", l.VariantID).Scan(&cost)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO sale_lines(id,sale_id,line_no,variant_id,product_name,variant_name,sku,qty_milli,unit_price_minor,discount_minor,tax_minor,total_minor,original_price_minor,tax_rate_bp,cost_minor)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, l.ID, s.ID, l.LineNo, l.VariantID, l.ProductName, l.VariantName, l.SKU,
+			l.QtyMilli, l.UnitPriceMinor, l.DiscountMinor, l.TaxMinor, l.TotalMinor, l.OriginalPriceMinor, l.TaxRateBP, cost); err != nil {
 			return err
 		}
 
@@ -404,7 +409,8 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 			onAccount += p.AmountMinor
 		}
 	}
-	return adjustBalance(ctx, tx, s.CustomerID, onAccount, s.UserID, t.ID, "sale", s.ID)
+	return postLedger(ctx, tx, ledgerEntry{CustomerID: s.CustomerID, Kind: "sale", RefID: s.ID, RefNo: s.ReceiptNo, Amount: onAccount,
+		At: s.CreatedAt, UserID: s.UserID, UserName: s.UserName, TerminalID: t.ID})
 }
 
 type stockMove struct {

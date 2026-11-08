@@ -6,3 +6,5 @@ frontend/dist
 *.db-shm
 /zebihub
 .DS_Store
+/zebiventor
+/zebiventor.exe

@@ -11,25 +11,39 @@ import (
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
 )
 
-// adjustBalance changes what a customer owes on account and publishes the
-// new balance to all tills.
-func adjustBalance(ctx context.Context, tx *sql.Tx, customerID string, delta int64, userID, terminalID, refType, refID string) error {
-	if delta == 0 {
+// ledgerEntry is one change to what a customer owes.
+type ledgerEntry struct {
+	CustomerID, Kind, RefID, RefNo, Note string
+	UserID, UserName, TerminalID         string
+	Amount, At                           int64
+}
+
+// postLedger changes what a customer owes on account, records it on the
+// customer's statement and publishes the new balance to all tills.
+func postLedger(ctx context.Context, tx *sql.Tx, e ledgerEntry) error {
+	if e.Amount == 0 {
 		return nil
 	}
-	if customerID == "" {
-		audit(ctx, tx, userID, terminalID, refType+".credit_without_customer", refType, refID, map[string]any{"amount": delta})
+	if e.CustomerID == "" {
+		audit(ctx, tx, e.UserID, e.TerminalID, e.Kind+".credit_without_customer", e.Kind, e.RefID, map[string]any{"amount": e.Amount})
 		return nil
 	}
-	res, err := tx.ExecContext(ctx, "UPDATE customers SET balance_minor=balance_minor+? WHERE id=?", delta, customerID)
+	res, err := tx.ExecContext(ctx, "UPDATE customers SET balance_minor=balance_minor+? WHERE id=?", e.Amount, e.CustomerID)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		audit(ctx, tx, userID, terminalID, refType+".unknown_customer", refType, refID, map[string]any{"customer_id": customerID, "amount": delta})
+		audit(ctx, tx, e.UserID, e.TerminalID, e.Kind+".unknown_customer", e.Kind, e.RefID, map[string]any{"customer_id": e.CustomerID, "amount": e.Amount})
 		return nil
 	}
-	return recordChange(ctx, tx, protocol.EntityCustomer, customerID)
+	if e.At == 0 {
+		e.At = ids.NowMs()
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO customer_ledger(id,customer_id,at,kind,ref_id,ref_no,amount_minor,note,user_name) VALUES(?,?,?,?,?,?,?,?,?)`,
+		ids.New(), e.CustomerID, e.At, e.Kind, e.RefID, e.RefNo, e.Amount, e.Note, e.UserName); err != nil {
+		return err
+	}
+	return recordChange(ctx, tx, protocol.EntityCustomer, e.CustomerID)
 }
 
 // applyReturn records a refund. Like sales, a return that reaches the hub
@@ -110,7 +124,8 @@ func (h *Hub) applyReturn(ctx context.Context, tx *sql.Tx, t *Terminal, op proto
 			onAccount += p.AmountMinor
 		}
 	}
-	return adjustBalance(ctx, tx, r.CustomerID, -onAccount, r.UserID, t.ID, "return", r.ID)
+	return postLedger(ctx, tx, ledgerEntry{CustomerID: r.CustomerID, Kind: "return", RefID: r.ID, RefNo: r.ReturnNo, Amount: -onAccount,
+		At: r.CreatedAt, UserID: r.UserID, UserName: r.UserName, TerminalID: t.ID})
 }
 
 func (h *Hub) applyShiftOpen(ctx context.Context, tx *sql.Tx, t *Terminal, op protocol.Op) error {

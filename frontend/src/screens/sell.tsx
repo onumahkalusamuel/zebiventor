@@ -149,7 +149,7 @@ function SellScreen() {
 
   async function applyDiscount(minor: number) {
     if (minor > 0) {
-      const tok = await requestApproval(`Give a ${fmt(minor)} discount`)
+      const tok = await requestApproval(`Give a ${fmt(minor)} discount`, "discount")
       if (tok === null) return
       setCart((c) => ({ ...c, discount: minor, approvalToken: tok || c.approvalToken }))
     } else {
@@ -187,7 +187,7 @@ function SellScreen() {
   }
 
   async function noSale() {
-    const tok = await requestApproval("Open the cash drawer without a sale")
+    const tok = await requestApproval("Open the cash drawer without a sale", "no_sale")
     if (tok === null) return
     try {
       await api.openDrawer(tok)
@@ -506,7 +506,7 @@ function SellScreen() {
           if (idx < 0) return
           const patch: Partial<CartLine> = { qty_milli: qty }
           if (price !== undefined && price !== unitPrice(lineEdit!)) {
-            const tok = await requestApproval(`Change the price of ${lineEdit!.item.name} to ${fmt(price)}`)
+            const tok = await requestApproval(`Change the price of ${lineEdit!.item.name} to ${fmt(price)}`, "price_override")
             if (tok === null) return
             patch.price_override = price === lineEdit!.item.price_minor ? undefined : price
             setCart((c) => ({ ...c, approvalToken: tok || c.approvalToken }))

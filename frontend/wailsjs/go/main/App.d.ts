@@ -5,6 +5,8 @@ import {main} from '../models';
 import {terminal} from '../models';
 import {discovery} from '../models';
 
+export function AccountPaymentPreview(arg1:string,arg2:boolean):Promise<string>;
+
 export function AdjustStock(arg1:protocol.StockAdjustRequest):Promise<void>;
 
 export function Approve(arg1:string,arg2:string):Promise<main.ApprovalResult>;
@@ -37,6 +39,8 @@ export function HeldSales():Promise<Array<terminal.HeldSale>>;
 
 export function HoldSale(arg1:terminal.HeldSale):Promise<string>;
 
+export function HubCall(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function JoinHub(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function ListPrinters():Promise<Array<string>>;
@@ -63,6 +67,8 @@ export function OpenShift(arg1:number):Promise<protocol.Shift>;
 
 export function PaymentMethods():Promise<Array<protocol.PaymentMethod>>;
 
+export function PrintAccountPayment(arg1:string):Promise<void>;
+
 export function PrintReturn(arg1:string,arg2:boolean):Promise<void>;
 
 export function PrintSale(arg1:string,arg2:boolean):Promise<void>;
@@ -72,6 +78,8 @@ export function PrintShift(arg1:string):Promise<void>;
 export function RecallHeldSale(arg1:string):Promise<terminal.HeldSale>;
 
 export function ReceiptPreview(arg1:string,arg2:boolean):Promise<string>;
+
+export function ReceiveAccountPayment(arg1:terminal.AccountPaymentInput):Promise<main.AccountPaymentResult>;
 
 export function RecentSales(arg1:string):Promise<Array<terminal.SaleSummary>>;
 
@@ -92,6 +100,8 @@ export function SavePrinterConfig(arg1:main.PrinterConfig):Promise<void>;
 export function SaveProduct(arg1:protocol.ProductInput):Promise<string>;
 
 export function SaveStoreSettings(arg1:Record<string, string>):Promise<void>;
+
+export function SaveTextFile(arg1:string,arg2:string):Promise<string>;
 
 export function SaveUser(arg1:protocol.UserInput):Promise<string>;
 

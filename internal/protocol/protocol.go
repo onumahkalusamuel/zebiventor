@@ -100,6 +100,8 @@ type Variant struct {
 	PriceMinor int64  `json:"price_minor"`
 	CostMinor  int64  `json:"cost_minor"`
 	Active     bool   `json:"active"`
+	// ReorderLevelMilli flags the item as low on stock at or below this level (0 = off).
+	ReorderLevelMilli int64 `json:"reorder_level_milli"`
 }
 
 // Barcode maps a scanned code to a variant. PackQtyMilli lets one barcode
@@ -209,7 +211,30 @@ const (
 	OpShiftClose     = "shift.close"
 	OpCashMovement   = "cash.movement"
 	OpCustomerUpsert = "customer.upsert"
+	OpAccountPayment = "account.payment"
 )
+
+// AccountPayment is money received from a customer against what they owe
+// on account. It is taken at a till (offline too) inside a shift.
+type AccountPayment struct {
+	ID            string `json:"id"`
+	PaymentNo     string `json:"payment_no"`
+	CustomerID    string `json:"customer_id"`
+	CustomerName  string `json:"customer_name"`
+	TerminalID    string `json:"terminal_id"`
+	ShiftID       string `json:"shift_id"`
+	MethodID      string `json:"method_id"`
+	MethodName    string `json:"method_name"`
+	Kind          string `json:"kind"`
+	AmountMinor   int64  `json:"amount_minor"`
+	Reference     string `json:"reference"`
+	Note          string `json:"note"`
+	UserID        string `json:"user_id"`
+	UserName      string `json:"user_name"`
+	BalanceBefore int64  `json:"balance_before_minor"` // as known by the till
+	CreatedAt     int64  `json:"created_at"`
+	SyncedAt      int64  `json:"synced_at"`
+}
 
 // Return is a refund against an earlier sale (from any till).
 type Return struct {
@@ -282,6 +307,9 @@ type ShiftSummary struct {
 	CashRefunds   int64         `json:"cash_refunds_minor"`
 	PaidIn        int64         `json:"paid_in_minor"`
 	PaidOut       int64         `json:"paid_out_minor"`
+	AccountCount  int64         `json:"account_payments_count"`
+	AccountMinor  int64         `json:"account_payments_minor"`
+	CashAccount   int64         `json:"cash_account_payments_minor"`
 	ExpectedCash  int64         `json:"expected_cash_minor"`
 	CountedCash   int64         `json:"counted_cash_minor"`
 	Variance      int64         `json:"variance_minor"`
@@ -293,7 +321,9 @@ type MethodTotal struct {
 	Kind         string `json:"kind"`
 	SalesMinor   int64  `json:"sales_minor"`
 	RefundsMinor int64  `json:"refunds_minor"`
-	NetMinor     int64  `json:"net_minor"`
+	// PaymentsMinor is money received on customer accounts with this method.
+	PaymentsMinor int64 `json:"payments_minor"`
+	NetMinor      int64 `json:"net_minor"`
 }
 
 // Cash movement kinds.

@@ -58,6 +58,11 @@ export const api = {
   heldSales: (): Promise<T.HeldSale[]> => go.HeldSales(),
   recallHeldSale: (id: string): Promise<T.HeldSale> => go.RecallHeldSale(id),
 
+  receiveAccountPayment: (input: T.AccountPaymentInput): Promise<T.AccountPaymentResult> => go.ReceiveAccountPayment(input),
+  accountPaymentPreview: (id: string, reprint: boolean): Promise<string> => go.AccountPaymentPreview(id, reprint),
+  printAccountPayment: (id: string): Promise<void> => go.PrintAccountPayment(id),
+  saveTextFile: (name: string, content: string): Promise<string> => go.SaveTextFile(name, content),
+
   searchCustomers: (q: string): Promise<T.Customer[]> => go.SearchCustomers(q),
   saveCustomer: (c: Partial<T.Customer>): Promise<T.Customer> => go.SaveCustomer(c),
 

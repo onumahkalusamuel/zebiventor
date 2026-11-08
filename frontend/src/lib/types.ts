@@ -131,7 +131,7 @@ export interface Sale {
 
 export interface SaleSummary {
   id: string
-  kind: "sale" | "return"
+  kind: "sale" | "return" | "payment"
   customer: string
   receipt_no: string
   user_name: string
@@ -178,6 +178,7 @@ export interface Variant {
   price_minor: number
   cost_minor: number
   active: boolean
+  reorder_level_milli: number
 }
 
 export interface VariantDetail extends Variant {
@@ -325,6 +326,7 @@ export interface MethodTotal {
   kind: string
   sales_minor: number
   refunds_minor: number
+  payments_minor: number
   net_minor: number
 }
 
@@ -343,6 +345,9 @@ export interface ShiftSummary {
   cash_refunds_minor: number
   paid_in_minor: number
   paid_out_minor: number
+  account_payments_count: number
+  account_payments_minor: number
+  cash_account_payments_minor: number
   expected_cash_minor: number
   counted_cash_minor: number
   variance_minor: number
@@ -420,4 +425,313 @@ export interface HeldSale {
 export interface ApprovalResult {
   token: string
   name: string
+}
+
+// ---------- payments on account ----------
+
+export interface AccountPaymentInput {
+  customer_id: string
+  method_id: string
+  amount_minor: number
+  reference: string
+  note: string
+}
+
+export interface AccountPayment {
+  id: string
+  payment_no: string
+  customer_id: string
+  customer_name: string
+  method_name: string
+  kind: string
+  amount_minor: number
+  reference: string
+  balance_before_minor: number
+  created_at: number
+}
+
+export interface AccountPaymentResult {
+  payment: AccountPayment
+  printed: boolean
+  print_error: string
+}
+
+export interface CustomerLedgerEntry {
+  id: string
+  at: number
+  kind: "opening" | "sale" | "return" | "payment" | "adjustment"
+  ref_id: string
+  ref_no: string
+  amount_minor: number
+  balance_minor: number
+  note: string
+  user_name: string
+}
+
+export interface CustomerStatement {
+  customer: Customer
+  entries: CustomerLedgerEntry[]
+}
+
+// ---------- back office (hub) ----------
+
+export interface Location {
+  id: string
+  name: string
+  code: string
+  active: boolean
+}
+
+export interface LocationInfo extends Location {
+  terminals: number
+  value_minor: number
+  is_default: boolean
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  contact_name: string
+  phone: string
+  email: string
+  address: string
+  notes: string
+  active: boolean
+  open_orders: number
+  received_minor: number
+}
+
+export type POStatus = "draft" | "ordered" | "partial" | "received" | "cancelled"
+
+export interface PurchaseOrderLine {
+  id: string
+  variant_id: string
+  product_name: string
+  variant_name: string
+  sku: string
+  unit: string
+  qty_ordered_milli: number
+  qty_received_milli: number
+  unit_cost_minor: number
+}
+
+export interface PurchaseOrder {
+  id: string
+  po_no: string
+  supplier_id: string
+  supplier_name: string
+  location_id: string
+  location_name: string
+  status: POStatus
+  expected_at: number
+  note: string
+  created_by: string
+  created_at: number
+  updated_at: number
+  ordered_at: number
+  total_minor: number
+  line_count: number
+  lines?: PurchaseOrderLine[]
+  receipts?: GoodsReceipt[]
+}
+
+export interface PurchaseOrderInput {
+  id: string
+  supplier_id: string
+  location_id: string
+  expected_at: number
+  note: string
+  lines: { variant_id: string; qty_ordered_milli: number; unit_cost_minor: number }[]
+  submit: boolean
+}
+
+export interface GoodsReceiptLine {
+  id?: string
+  po_line_id: string
+  variant_id: string
+  product_name: string
+  variant_name: string
+  sku: string
+  qty_milli: number
+  unit_cost_minor: number
+  total_minor: number
+  new_price_minor?: number
+}
+
+export interface GoodsReceipt {
+  id: string
+  grn_no: string
+  po_id: string
+  po_no: string
+  supplier_id: string
+  supplier_name: string
+  location_id: string
+  location_name: string
+  supplier_ref: string
+  note: string
+  received_by: string
+  created_at: number
+  total_minor: number
+  lines?: GoodsReceiptLine[]
+}
+
+export interface GoodsReceiptInput {
+  po_id: string
+  supplier_id: string
+  location_id: string
+  supplier_ref: string
+  note: string
+  lines: { po_line_id: string; variant_id: string; qty_milli: number; unit_cost_minor: number; new_price_minor: number }[]
+  close_po: boolean
+}
+
+export interface StockTransferLine {
+  variant_id: string
+  product_name: string
+  variant_name: string
+  sku: string
+  qty_milli: number
+}
+
+export interface StockTransfer {
+  id: string
+  transfer_no: string
+  from_location_id: string
+  from_location_name: string
+  to_location_id: string
+  to_location_name: string
+  note: string
+  created_by: string
+  created_at: number
+  items_milli: number
+  lines?: StockTransferLine[]
+}
+
+export type CountStatus = "open" | "posted" | "cancelled"
+
+export interface StockCountLine {
+  variant_id: string
+  product_name: string
+  variant_name: string
+  sku: string
+  unit: string
+  counted_milli: number
+  counted_at: number
+  counted_by: string
+  expected_milli: number
+  cost_minor: number
+  uncounted: boolean
+}
+
+export interface StockCount {
+  id: string
+  count_no: string
+  name: string
+  location_id: string
+  location_name: string
+  category_id: string
+  category_name: string
+  status: CountStatus
+  created_by: string
+  created_at: number
+  posted_by: string
+  posted_at: number
+  note: string
+  line_count: number
+  lines?: StockCountLine[]
+  warnings?: string[]
+}
+
+export interface StockMovement {
+  id: string
+  location_name: string
+  qty_milli: number
+  reason: string
+  ref_type: string
+  ref_no: string
+  user_name: string
+  terminal_name: string
+  note: string
+  created_at: number
+  balance_milli: number
+}
+
+export interface StockReportRow {
+  variant_id: string
+  product_name: string
+  variant_name: string
+  sku: string
+  category_name: string
+  unit: string
+  location_id: string
+  location_name: string
+  qty_milli: number
+  reorder_level_milli: number
+  cost_minor: number
+  price_minor: number
+  value_minor: number
+  retail_minor: number
+  sold_milli_30d: number
+}
+
+export interface StockReport {
+  rows: StockReportRow[]
+  value_minor: number
+  retail_minor: number
+  low_count: number
+  out_count: number
+}
+
+export type SalesGroup = "day" | "hour" | "weekday" | "product" | "category" | "cashier" | "till" | "customer" | "location"
+
+export interface SalesReportRow {
+  key: string
+  label: string
+  sub: string
+  transactions: number
+  qty_milli: number
+  gross_minor: number
+  discount_minor: number
+  tax_minor: number
+  returns_minor: number
+  net_minor: number
+  cost_minor: number
+  profit_minor: number
+}
+
+export interface SalesReport {
+  from: number
+  to: number
+  group: SalesGroup
+  totals: SalesReportRow
+  rows: SalesReportRow[]
+  payments: MethodTotal[]
+}
+
+export interface ShiftReportRow extends Shift {
+  terminal_name: string
+  expected_cash_minor: number
+  variance_minor: number
+}
+
+export interface AuditEntry {
+  id: string
+  at: number
+  user_name: string
+  terminal_name: string
+  action: string
+  entity: string
+  entity_id: string
+  details: string
+}
+
+export interface ImportResult {
+  dry_run: boolean
+  rows: number
+  created: number
+  updated: number
+  skipped: number
+  errors: { row: number; message: string }[]
+  columns: string[]
+  new_categories: string[]
 }

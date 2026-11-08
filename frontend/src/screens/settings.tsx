@@ -234,7 +234,16 @@ function PrinterSettings() {
 
 // ---------- store ----------
 
-const storeKeys = ["store_name", "business_type", "store_address", "store_phone", "store_email", "tax_id", "currency_code", "currency_symbol", "receipt_header", "receipt_footer", "tax_mode", "tax_name"]
+const storeKeys = ["store_name", "business_type", "store_address", "store_phone", "store_email", "tax_id", "currency_code", "currency_symbol", "receipt_header", "receipt_footer", "tax_mode", "tax_name",
+  "approval_discount", "approval_price_override", "approval_refund", "approval_paid_out", "approval_no_sale"]
+
+const approvalRules: { key: string; label: string; hint: string }[] = [
+  { key: "approval_discount", label: "Discounts", hint: "Giving a discount on a sale" },
+  { key: "approval_price_override", label: "Price changes", hint: "Selling an item at a different price" },
+  { key: "approval_refund", label: "Refunds", hint: "Giving money back on a return" },
+  { key: "approval_paid_out", label: "Paid out", hint: "Taking cash out of the drawer (petty cash, bank drop)" },
+  { key: "approval_no_sale", label: "No sale", hint: "Opening the drawer without a sale" },
+]
 
 function StoreSettings() {
   const state = useLoadedState()
@@ -307,6 +316,13 @@ function StoreSettings() {
             </Select>
           </div>
           {field("tax_name", "Tax name", { placeholder: "VAT" })}
+        </div>
+      </Section>
+      <Section title="Manager approval" description="What cashiers need a manager for. Managers and admins never need approval; who approved is recorded either way.">
+        <div className="divide-y">
+          {approvalRules.map((r) => (
+            <SwitchRow key={r.key} label={r.label} hint={r.hint} checked={v[r.key] !== "0"} onChange={(on) => set(r.key, on ? "1" : "0")} />
+          ))}
         </div>
       </Section>
       <Section title="Receipt text" description="Shown on every printed receipt.">

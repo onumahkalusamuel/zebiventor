@@ -76,9 +76,13 @@ function CurrentShift({ shift, onView }: { shift: ShiftT; onView: (id: string) =
       <div className="grid grid-cols-4 gap-3">
         <StatCard label="Sales" value={s.sales_count} sub={`${formatQty(s.items_milli)} items`} />
         <StatCard label="Net takings" value={fmt(s.net_sales_minor - s.returns_minor)} sub={s.returns_count ? `after ${s.returns_count} refund(s)` : "no refunds"} />
-        <StatCard label="Discounts given" value={fmt(s.discount_minor)} />
+        {s.account_payments_count ? (
+          <StatCard label="Paid on accounts" value={fmt(s.account_payments_minor)} sub={`${s.account_payments_count} payment(s) · ${fmt(s.discount_minor)} discounts`} />
+        ) : (
+          <StatCard label="Discounts given" value={fmt(s.discount_minor)} />
+        )}
         {isManager ? (
-          <StatCard label="Cash expected in drawer" value={fmt(s.expected_cash_minor)} sub="float + cash − refunds ± paid in/out" />
+          <StatCard label="Cash expected in drawer" value={fmt(s.expected_cash_minor)} sub="float + cash sales & account payments − refunds ± paid in/out" />
         ) : (
           <StatCard label="Cash in drawer" value="Counted at close" sub="Blind count for cashiers" />
         )}
@@ -92,7 +96,9 @@ function CurrentShift({ shift, onView }: { shift: ShiftT; onView: (id: string) =
               {(s.by_method ?? []).map((m) => (
                 <TableRow key={m.method_name}>
                   <TableCell className="pl-4">{m.method_name}</TableCell>
-                  <TableCell className="text-right text-muted-foreground tabular">{m.refunds_minor ? `−${fmt(m.refunds_minor)} refunds` : ""}</TableCell>
+                  <TableCell className="text-right text-muted-foreground tabular">
+                    {[m.refunds_minor ? `−${fmt(m.refunds_minor)} refunds` : "", m.payments_minor ? `+${fmt(m.payments_minor)} on account` : ""].filter(Boolean).join(" · ")}
+                  </TableCell>
                   <TableCell className="pr-4 text-right font-semibold tabular">{fmt(m.net_minor)}</TableCell>
                 </TableRow>
               ))}
@@ -155,7 +161,7 @@ function MoveDialog({ kind, onClose }: { kind: null | "paid_in" | "paid_out"; on
     if (!kind) return
     let tok = ""
     if (kind === "paid_out") {
-      const t = await requestApproval(`Take ${fmt(minor)} out of the drawer: ${reason}`)
+      const t = await requestApproval(`Take ${fmt(minor)} out of the drawer: ${reason}`, "paid_out")
       if (t === null) return
       tok = t
     }

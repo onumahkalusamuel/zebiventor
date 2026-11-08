@@ -123,7 +123,7 @@ func (t *Terminal) RecordReturn(ctx context.Context, u User, approver *User, in 
 	if !ok {
 		return nil, errors.New("this till is not paired with a hub")
 	}
-	approved, err := approvedBy(u, approver)
+	approved, err := t.authorise(ctx, u, approver, ApproveRefund)
 	if err != nil {
 		return nil, err
 	}

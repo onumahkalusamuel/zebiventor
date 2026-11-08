@@ -52,6 +52,37 @@ var ErrApprovalRequired = SaleError{"manager approval required"}
 // IsManager reports whether the role can authorise discounts, overrides and refunds.
 func IsManager(role string) bool { return role == protocol.RoleAdmin || role == protocol.RoleManager }
 
+// Actions that may need a manager, each switchable in store settings.
+const (
+	ApproveDiscount      = "discount"
+	ApprovePriceOverride = "price_override"
+	ApproveRefund        = "refund"
+	ApprovePaidOut       = "paid_out"
+	ApproveNoSale        = "no_sale"
+)
+
+// NeedsApproval reports whether cashiers need a manager for an action.
+// Rules come from store settings; anything not set to "0" is required.
+func (t *Terminal) NeedsApproval(ctx context.Context, action string) bool {
+	var v string
+	t.db.R().QueryRowContext(ctx, "SELECT value FROM settings WHERE key=?", "approval_"+action).Scan(&v)
+	return v != "0"
+}
+
+// authorise returns who authorised an action: the manager (or the user
+// themselves when they are one), "" when no approval is needed, or an error.
+func (t *Terminal) authorise(ctx context.Context, u User, approver *User, actions ...string) (string, error) {
+	need := false
+	for _, a := range actions {
+		need = need || t.NeedsApproval(ctx, a)
+	}
+	by, err := approvedBy(u, approver)
+	if err != nil && !need {
+		return "", nil
+	}
+	return by, err
+}
+
 // approvedBy decides who authorised a sensitive action, or fails.
 func approvedBy(u User, approver *User) (string, error) {
 	if IsManager(u.Role) {
@@ -136,18 +167,21 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, approver *User, in Sa
 	if in.DiscountMinor < 0 {
 		return nil, saleErr("discount cannot be negative")
 	}
-	needsApproval := in.DiscountMinor > 0
+	var actions []string
+	if in.DiscountMinor > 0 {
+		actions = append(actions, ApproveDiscount)
+	}
 	for _, l := range in.Lines {
 		if l.PriceOverride != nil {
 			if *l.PriceOverride < 0 {
 				return nil, saleErr("price cannot be negative")
 			}
-			needsApproval = true
+			actions = append(actions, ApprovePriceOverride)
 		}
 	}
 	approved := ""
-	if needsApproval {
-		by, err := approvedBy(u, approver)
+	if len(actions) > 0 {
+		by, err := t.authorise(ctx, u, approver, actions...)
 		if err != nil {
 			return nil, err
 		}
@@ -385,7 +419,7 @@ func (t *Terminal) payments(ctx context.Context, table, col, id string) ([]proto
 // SaleSummary is a row in the sales history list (sales and returns).
 type SaleSummary struct {
 	ID         string `json:"id"`
-	Kind       string `json:"kind"` // sale | return
+	Kind       string `json:"kind"` // sale | return | payment
 	ReceiptNo  string `json:"receipt_no"`
 	UserName   string `json:"user_name"`
 	Customer   string `json:"customer"`
@@ -413,6 +447,9 @@ func (t *Terminal) RecentSales(ctx context.Context, query string, limit int) ([]
 			(SELECT COALESCE(group_concat(method_name, ', '),'') FROM return_refunds WHERE return_id=r.id),
 			r.created_at, r.synced_at > 0
 		FROM returns r WHERE (?1='' OR r.return_no LIKE '%'||?1||'%' OR r.sale_receipt_no LIKE '%'||?1||'%' OR r.customer_name LIKE '%'||?1||'%')
+		UNION ALL
+		SELECT a.id, 'payment', a.payment_no, a.user_name, a.customer_name, a.amount_minor, 0, a.method_name, a.created_at, a.synced_at > 0
+		FROM account_payments a WHERE (?1='' OR a.payment_no LIKE '%'||?1||'%' OR a.customer_name LIKE '%'||?1||'%')
 		) ORDER BY 9 DESC LIMIT ?2`, query, limit)
 	if err != nil {
 		return nil, err

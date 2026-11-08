@@ -25,6 +25,16 @@ func (h *Hub) SaveProduct(ctx context.Context, by *Session, in protocol.ProductI
 	if !by.Can(catalogRoles...) {
 		return "", ErrForbidden
 	}
+	var id string
+	err := h.write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		id, err = h.saveProductTx(ctx, tx, by, in)
+		return err
+	})
+	return id, err
+}
+
+func (h *Hub) saveProductTx(ctx context.Context, tx *sql.Tx, by *Session, in protocol.ProductInput) (string, error) {
 	p := in.Product
 	p.Name = strings.TrimSpace(p.Name)
 	if p.TaxRateBP < 0 || p.TaxRateBP > 10000 {
@@ -54,47 +64,86 @@ func (h *Hub) SaveProduct(ctx context.Context, by *Session, in protocol.ProductI
 		p.Active = true
 	}
 
-	err := h.write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		now := ids.NowMs()
-		if p.CategoryID != "" {
-			var n int
-			tx.QueryRowContext(ctx, "SELECT count(*) FROM categories WHERE id=?", p.CategoryID).Scan(&n)
-			if n == 0 {
-				return invalid("unknown category")
-			}
+	now := ids.NowMs()
+	if p.CategoryID != "" {
+		var n int
+		tx.QueryRowContext(ctx, "SELECT count(*) FROM categories WHERE id=?", p.CategoryID).Scan(&n)
+		if n == 0 {
+			return "", invalid("unknown category")
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO products(id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,created_at,updated_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-			ON CONFLICT(id) DO UPDATE SET name=excluded.name, category_id=excluded.category_id, description=excluded.description,
-			attributes=excluded.attributes, unit=excluded.unit, allow_fraction=excluded.allow_fraction, track_stock=excluded.track_stock,
-			tax_rate_bp=excluded.tax_rate_bp, active=excluded.active, updated_at=excluded.updated_at`,
-			p.ID, p.Name, p.CategoryID, p.Description, string(attrs), p.Unit, p.AllowFraction, p.TrackStock, p.TaxRateBP, p.Active, now, now)
-		if err != nil {
-			return err
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO products(id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,created_at,updated_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name, category_id=excluded.category_id, description=excluded.description,
+		attributes=excluded.attributes, unit=excluded.unit, allow_fraction=excluded.allow_fraction, track_stock=excluded.track_stock,
+		tax_rate_bp=excluded.tax_rate_bp, active=excluded.active, updated_at=excluded.updated_at`,
+		p.ID, p.Name, p.CategoryID, p.Description, string(attrs), p.Unit, p.AllowFraction, p.TrackStock, p.TaxRateBP, p.Active, now, now)
+	if err != nil {
+		return "", err
+	}
+	if err := recordChange(ctx, tx, protocol.EntityProduct, p.ID); err != nil {
+		return "", err
+	}
+	for _, vi := range in.Variants {
+		if err := h.saveVariant(ctx, tx, by, p, vi, now); err != nil {
+			return "", err
 		}
-		if err := recordChange(ctx, tx, protocol.EntityProduct, p.ID); err != nil {
-			return err
-		}
+	}
+	action := "product.update"
+	if isNew {
+		action = "product.create"
+	}
+	audit(ctx, tx, by.UserID, "", action, "product", p.ID, map[string]any{"name": p.Name})
+	return p.ID, nil
+}
 
-		for _, vi := range in.Variants {
-			if err := h.saveVariant(ctx, tx, by, p, vi, now); err != nil {
-				return err
-			}
+// loadProductInput reads a product back in the shape SaveProduct accepts.
+func loadProductInput(ctx context.Context, tx *sql.Tx, productID string) (protocol.ProductInput, error) {
+	var in protocol.ProductInput
+	p := &in.Product
+	var attrs string
+	err := tx.QueryRowContext(ctx, `SELECT id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active FROM products WHERE id=?`, productID).
+		Scan(&p.ID, &p.Name, &p.CategoryID, &p.Description, &attrs, &p.Unit, &p.AllowFraction, &p.TrackStock, &p.TaxRateBP, &p.Active)
+	if err != nil {
+		return in, err
+	}
+	_ = json.Unmarshal([]byte(attrs), &p.Attributes)
+	rows, err := tx.QueryContext(ctx, `SELECT id,name,sku,price_minor,cost_minor,active,reorder_level_milli FROM variants WHERE product_id=? ORDER BY created_at`, productID)
+	if err != nil {
+		return in, err
+	}
+	for rows.Next() {
+		var v protocol.VariantInput
+		v.ProductID = productID
+		if err := rows.Scan(&v.ID, &v.Name, &v.SKU, &v.PriceMinor, &v.CostMinor, &v.Active, &v.ReorderLevelMilli); err != nil {
+			rows.Close()
+			return in, err
 		}
-		action := "product.update"
-		if isNew {
-			action = "product.create"
+		in.Variants = append(in.Variants, v)
+	}
+	rows.Close()
+	for i := range in.Variants {
+		brows, err := tx.QueryContext(ctx, "SELECT code FROM barcodes WHERE variant_id=? AND deleted=0", in.Variants[i].ID)
+		if err != nil {
+			return in, err
 		}
-		audit(ctx, tx, by.UserID, "", action, "product", p.ID, map[string]any{"name": p.Name})
-		return nil
-	})
-	return p.ID, err
+		for brows.Next() {
+			var c string
+			brows.Scan(&c)
+			in.Variants[i].Barcodes = append(in.Variants[i].Barcodes, c)
+		}
+		brows.Close()
+	}
+	return in, nil
 }
 
 func (h *Hub) saveVariant(ctx context.Context, tx *sql.Tx, by *Session, p protocol.Product, vi protocol.VariantInput, now int64) error {
 	v := vi.Variant
 	if v.PriceMinor < 0 || v.CostMinor < 0 {
 		return invalid("prices cannot be negative")
+	}
+	if v.ReorderLevelMilli < 0 {
+		return invalid("the reorder level cannot be negative")
 	}
 	isNew := v.ID == ""
 	if isNew {
@@ -125,10 +174,10 @@ func (h *Hub) saveVariant(ctx context.Context, tx *sql.Tx, by *Session, p protoc
 		return invalid("SKU %q is already used by %q", v.SKU, clash)
 	}
 
-	if _, err := tx.ExecContext(ctx, `INSERT INTO variants(id,product_id,name,sku,price_minor,cost_minor,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO variants(id,product_id,name,sku,price_minor,cost_minor,active,reorder_level_milli,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, sku=excluded.sku, price_minor=excluded.price_minor, cost_minor=excluded.cost_minor,
-		active=excluded.active, updated_at=excluded.updated_at`,
-		v.ID, p.ID, strings.TrimSpace(v.Name), v.SKU, v.PriceMinor, v.CostMinor, v.Active, now, now); err != nil {
+		active=excluded.active, reorder_level_milli=excluded.reorder_level_milli, updated_at=excluded.updated_at`,
+		v.ID, p.ID, strings.TrimSpace(v.Name), v.SKU, v.PriceMinor, v.CostMinor, v.Active, v.ReorderLevelMilli, now, now); err != nil {
 		return err
 	}
 	if err := recordChange(ctx, tx, protocol.EntityVariant, v.ID); err != nil {
@@ -385,6 +434,7 @@ var editableSettings = map[string]bool{
 	"store_name": true, "business_type": true, "store_address": true, "store_phone": true, "store_email": true,
 	"tax_id": true, "currency_code": true, "currency_symbol": true, "receipt_header": true, "receipt_footer": true,
 	"tax_mode": true, "tax_name": true,
+	"approval_discount": true, "approval_price_override": true, "approval_refund": true, "approval_paid_out": true, "approval_no_sale": true,
 }
 
 // SaveSettings updates store-wide settings.
@@ -399,6 +449,11 @@ func (h *Hub) SaveSettings(ctx context.Context, by *Session, values map[string]s
 	}
 	if v, ok := values["tax_mode"]; ok && v != protocol.TaxNone && v != protocol.TaxInclusive && v != protocol.TaxExclusive {
 		return invalid("tax mode must be none, inclusive or exclusive")
+	}
+	for k, v := range values {
+		if strings.HasPrefix(k, "approval_") && v != "0" && v != "1" {
+			return invalid("%s must be 0 or 1", k)
+		}
 	}
 	if v, ok := values["store_name"]; ok && strings.TrimSpace(v) == "" {
 		return invalid("store name cannot be empty")

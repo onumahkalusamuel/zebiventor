@@ -210,6 +210,45 @@ func FromReturn(rt *protocol.Return, settings map[string]string, cur money.Curre
 	return r
 }
 
+// FromAccountPayment builds the receipt for money paid on a customer's account.
+func FromAccountPayment(p *protocol.AccountPayment, settings map[string]string, cur money.Currency, terminalName string, reprint bool) Receipt {
+	r := storeHeader(settings)
+	r.Title = "PAYMENT ON ACCOUNT"
+	if reprint {
+		r.Title = "*** PAYMENT REPRINT ***"
+	}
+	r.Meta = [][2]string{
+		{"Payment", p.PaymentNo},
+		{"Date", time.UnixMilli(p.CreatedAt).Format("02 Jan 2006 15:04")},
+		{"Cashier", p.UserName},
+	}
+	if terminalName != "" {
+		r.Meta = append(r.Meta, [2]string{"Till", terminalName})
+	}
+	r.Meta = append(r.Meta, [2]string{"Customer", p.CustomerName})
+	label := "Paid by " + p.MethodName
+	if p.Reference != "" {
+		label += " #" + p.Reference
+	}
+	r.Totals = []Row{
+		{Label: "Balance before", Value: cur.Format(p.BalanceBefore)},
+		{Label: "AMOUNT PAID", Value: cur.FormatSymbol(p.AmountMinor), Strong: true},
+	}
+	after := p.BalanceBefore - p.AmountMinor
+	if after < 0 {
+		r.Totals = append(r.Totals, Row{Label: "In credit", Value: cur.FormatSymbol(-after), Strong: true})
+	} else {
+		r.Totals = append(r.Totals, Row{Label: "Balance remaining", Value: cur.FormatSymbol(after), Strong: true})
+	}
+	r.Payments = []Row{{Label: label, Value: cur.Format(p.AmountMinor)}}
+	if p.Note != "" {
+		r.Payments = append(r.Payments, Row{Label: "Note: " + p.Note})
+	}
+	r.FooterLines = append([]string{"Thank you for your payment."}, footer(settings)...)
+	r.QR = p.PaymentNo
+	return r
+}
+
 // ShiftReport builds the X (running) or Z (closing) report of a shift.
 func ShiftReport(s *protocol.Shift, settings map[string]string, cur money.Currency, terminalName string) Receipt {
 	r := Receipt{StoreName: settings["store_name"]}
@@ -247,11 +286,19 @@ func ShiftReport(s *protocol.Shift, settings map[string]string, cur money.Curren
 		{Label: fmt.Sprintf("Refunds (%d)", sum.ReturnsCount), Value: minus(sum.ReturnsMinor)},
 		{Label: "Net takings", Value: f(sum.NetSalesMinor - sum.ReturnsMinor), Strong: true},
 	}})
+	if sum.AccountCount > 0 {
+		r.Sections = append(r.Sections, Section{Title: "PAYMENTS ON ACCOUNT", Rows: []Row{
+			{Label: fmt.Sprintf("Received (%d)", sum.AccountCount), Value: f(sum.AccountMinor), Strong: true},
+		}})
+	}
 	var methods []Row
 	for _, m := range sum.ByMethod {
 		methods = append(methods, Row{Label: m.MethodName, Value: f(m.NetMinor)})
 		if m.RefundsMinor != 0 {
 			methods = append(methods, Row{Label: "  incl. refunds", Value: minus(m.RefundsMinor)})
+		}
+		if m.PaymentsMinor != 0 {
+			methods = append(methods, Row{Label: "  incl. on account", Value: f(m.PaymentsMinor)})
 		}
 	}
 	if len(methods) > 0 {
@@ -261,10 +308,15 @@ func ShiftReport(s *protocol.Shift, settings map[string]string, cur money.Curren
 		{Label: "Opening float", Value: f(sum.OpeningFloat)},
 		{Label: "Cash sales (less change)", Value: f(sum.CashSales)},
 		{Label: "Cash refunds", Value: minus(sum.CashRefunds)},
+	}
+	if sum.CashAccount != 0 {
+		cash = append(cash, Row{Label: "Cash paid on accounts", Value: f(sum.CashAccount)})
+	}
+	cash = append(cash, []Row{
 		{Label: "Paid in", Value: f(sum.PaidIn)},
 		{Label: "Paid out", Value: minus(sum.PaidOut)},
 		{Label: "Expected in drawer", Value: f(sum.ExpectedCash), Strong: true},
-	}
+	}...)
 	if sum.Closed {
 		v := f(sum.Variance)
 		if sum.Variance > 0 {

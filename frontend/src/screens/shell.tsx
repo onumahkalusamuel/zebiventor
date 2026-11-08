@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react"
-import { Boxes, Clock, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
+import { BarChart3, Boxes, Clock, Truck, Warehouse, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
 import { ApprovalProvider } from "@/components/approval"
 import { useShift } from "@/components/shift-gate"
 import { LogoMark } from "@/components/brand"
@@ -19,9 +19,12 @@ import { Settings } from "./settings"
 import { Returns } from "./returns"
 import { Shift } from "./shift"
 import { Customers } from "./customers"
+import { Purchasing } from "./purchasing"
+import { Stock } from "./stock"
+import { Reports } from "./reports"
 import { formatDateTime } from "@/lib/format"
 
-type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "team" | "tills" | "settings"
+type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "stock" | "purchasing" | "reports" | "team" | "tills" | "settings"
 
 const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: string }>; roles: Role[]; el: ComponentType }[] = [
   { key: "sell", label: "Sell", icon: ShoppingCart, roles: ["admin", "manager", "cashier"], el: Sell },
@@ -30,6 +33,9 @@ const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: st
   { key: "shift", label: "Shift", icon: Wallet, roles: ["admin", "manager", "cashier"], el: Shift },
   { key: "customers", label: "Customers", icon: UserRound, roles: ["admin", "manager", "cashier"], el: Customers },
   { key: "products", label: "Products", icon: Boxes, roles: ["admin", "manager", "inventory", "cashier"], el: Products },
+  { key: "stock", label: "Stock", icon: Warehouse, roles: ["admin", "manager", "inventory"], el: Stock },
+  { key: "purchasing", label: "Purchasing", icon: Truck, roles: ["admin", "manager", "inventory"], el: Purchasing },
+  { key: "reports", label: "Reports", icon: BarChart3, roles: ["admin", "manager"], el: Reports },
   { key: "team", label: "Team", icon: Users, roles: ["admin"], el: Team },
   { key: "tills", label: "Tills", icon: MonitorSmartphone, roles: ["admin", "manager"], el: Tills },
   { key: "settings", label: "Settings", icon: SettingsIcon, roles: ["admin", "manager", "inventory", "cashier"], el: Settings },

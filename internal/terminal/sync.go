@@ -242,9 +242,10 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 			}
 		}
 		for _, v := range r.Variants {
-			if err := exec(`INSERT INTO variants(id,product_id,name,sku,price_minor,cost_minor,active) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+			if err := exec(`INSERT INTO variants(id,product_id,name,sku,price_minor,cost_minor,active,reorder_level_milli) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
 				product_id=excluded.product_id, name=excluded.name, sku=excluded.sku, price_minor=excluded.price_minor,
-				cost_minor=excluded.cost_minor, active=excluded.active`, v.ID, v.ProductID, v.Name, v.SKU, v.PriceMinor, v.CostMinor, boolInt(v.Active)); err != nil {
+				cost_minor=excluded.cost_minor, active=excluded.active, reorder_level_milli=excluded.reorder_level_milli`,
+				v.ID, v.ProductID, v.Name, v.SKU, v.PriceMinor, v.CostMinor, boolInt(v.Active), v.ReorderLevelMilli); err != nil {
 				return err
 			}
 		}
@@ -379,6 +380,10 @@ func (t *Terminal) pushOnce(ctx context.Context) (int, error) {
 					}
 					if _, err := tx.ExecContext(ctx, `UPDATE returns SET synced_at=? WHERE id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
 						now, r.ID, protocol.OpReturnCreate); err != nil {
+						return err
+					}
+					if _, err := tx.ExecContext(ctx, `UPDATE account_payments SET synced_at=? WHERE id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
+						now, r.ID, protocol.OpAccountPayment); err != nil {
 						return err
 					}
 				case protocol.OpRejected:

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Boxes, Loader2, PackagePlus, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react"
+import { Boxes, FileUp, Loader2, PackagePlus, Plus, Search, SlidersHorizontal, Trash2, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { EmptyState, Page, PageHeader } from "@/components/page"
+import { ExportButton, LocationSelect } from "@/components/backoffice"
+import { hub } from "@/lib/hub"
+import type { ImportResult } from "@/lib/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -23,6 +26,7 @@ export function Products() {
   const [q, setQ] = useState("")
   const [editing, setEditing] = useState<ProductDetail | "new" | null>(null)
   const [adjust, setAdjust] = useState<{ p: ProductDetail; v: VariantDetail } | null>(null)
+  const [importing, setImporting] = useState(false)
   const products = useQuery({ queryKey: ["products", q], queryFn: () => api.listProducts(q) })
   const canEdit = can(state.user?.role, "admin", "manager", "inventory")
 
@@ -33,9 +37,19 @@ export function Products() {
         description={canEdit ? "Changes are saved at the hub and reach every till within seconds." : "Prices and stock as known by this till."}
         actions={
           canEdit && (
-            <Button className="h-10" onClick={() => setEditing("new")}>
-              <PackagePlus /> New product
-            </Button>
+            <>
+              {state.has_session && (
+                <>
+                  <Button variant="outline" className="h-10" onClick={() => setImporting(true)}>
+                    <Upload /> Import CSV
+                  </Button>
+                  <ExportButton name="products.csv" label="Export" build={async () => (await hub.exportProducts()).csv} />
+                </>
+              )}
+              <Button className="h-10" onClick={() => setEditing("new")}>
+                <PackagePlus /> New product
+              </Button>
+            </>
           )
         }
       />
@@ -84,7 +98,7 @@ export function Products() {
                       <TableCell className="text-right font-medium tabular">{fmt(v.price_minor)}</TableCell>
                       <TableCell className="text-right tabular">
                         {p.track_stock ? (
-                          <span className={cn(v.stock_milli <= 0 ? "text-red-600" : v.stock_milli <= 5000 && "text-amber-600")}>
+                          <span className={cn(v.stock_milli <= 0 ? "text-red-600" : v.reorder_level_milli > 0 && v.stock_milli <= v.reorder_level_milli && "text-amber-600")}>
                             {formatQty(v.stock_milli)} {p.unit !== "pc" && p.unit}
                           </span>
                         ) : (
@@ -116,6 +130,7 @@ export function Products() {
       </div>
       {editing && <ProductDialog product={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
       {adjust && <StockDialog {...adjust} onClose={() => setAdjust(null)} />}
+      {importing && <ImportDialog onClose={() => setImporting(false)} />}
     </Page>
   )
 }
@@ -128,6 +143,7 @@ interface VariantForm {
   cost: string
   barcodes: string
   opening: string
+  reorder: string
   active: boolean
 }
 
@@ -158,8 +174,9 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
       cost: v.cost_minor ? toMajor(v.cost_minor) : "",
       barcodes: v.barcodes.join(", "),
       opening: "",
+      reorder: v.reorder_level_milli ? formatQty(v.reorder_level_milli) : "",
       active: v.active,
-    })) ?? [{ id: "", name: "", sku: "", price: "", cost: "", barcodes: "", opening: "", active: true }],
+    })) ?? [{ id: "", name: "", sku: "", price: "", cost: "", barcodes: "", opening: "", reorder: "", active: true }],
   )
   const [busy, setBusy] = useState(false)
 
@@ -205,6 +222,7 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
           active: v.active,
           barcodes: v.barcodes.split(/[,\s]+/).filter(Boolean),
           opening_qty_milli: v.id ? 0 : parseQty(v.opening) || 0,
+          reorder_level_milli: parseQty(v.reorder) || 0,
           opening_location_id: "",
         })),
       }
@@ -288,14 +306,14 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setVariants((vs) => [...vs, { id: "", name: "", sku: "", price: "", cost: "", barcodes: "", opening: "", active: true }])}
+              onClick={() => setVariants((vs) => [...vs, { id: "", name: "", sku: "", price: "", cost: "", barcodes: "", opening: "", reorder: "", active: true }])}
             >
               <Plus /> Add variant
             </Button>
           </div>
           <div className="space-y-2">
             {variants.map((v, i) => (
-              <div key={i} className="grid grid-cols-[1.2fr_1fr_1fr_1fr_1.6fr_0.9fr_auto] items-end gap-2 rounded-lg border bg-muted/30 p-2.5">
+              <div key={i} className="grid grid-cols-[1.2fr_1fr_1fr_1fr_1.5fr_0.9fr_0.8fr_auto] items-end gap-2 rounded-lg border bg-muted/30 p-2.5">
                 <MiniField label="Variant">
                   <Input value={v.name} onChange={(e) => setV(i, { name: e.target.value })} placeholder={variants.length > 1 ? "e.g. Hardcover" : "(standard)"} />
                 </MiniField>
@@ -319,6 +337,9 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
                   ) : (
                     <Input inputMode="decimal" value={v.opening} onChange={(e) => setV(i, { opening: e.target.value })} disabled={!trackStock} className="text-right tabular" />
                   )}
+                </MiniField>
+                <MiniField label="Reorder at">
+                  <Input inputMode="decimal" value={v.reorder} onChange={(e) => setV(i, { reorder: e.target.value })} disabled={!trackStock} placeholder="–" className="text-right tabular" title="Flag as low on stock at or below this quantity" />
                 </MiniField>
                 <Button
                   variant="ghost"
@@ -432,6 +453,126 @@ function StockDialog({ p, v, onClose }: { p: ProductDetail; v: VariantDetail; on
           <Button onClick={save} disabled={bad || busy}>
             {busy && <Loader2 className="animate-spin" />} Save
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+const sampleCSV = `name,variant,sku,barcode,price,cost,quantity,category,unit,tax_rate,reorder_level,author,isbn
+Things Fall Apart,,,9780385474542,4500,3150,40,Fiction,pc,0,5,Chinua Achebe,9780385474542
+Exercise Book,40 leaves,EX40,6151100000401,300,180,200,Stationery,pc,0,50,,
+Exercise Book,80 leaves,EX80,6151100000802,500,300,150,Stationery,pc,0,50,,
+`
+
+function ImportDialog({ onClose }: { onClose: () => void }) {
+  const state = useLoadedState()
+  const qc = useQueryClient()
+  const [csv, setCsv] = useState("")
+  const [fileName, setFileName] = useState("")
+  const [location, setLocation] = useState(state.pairing.location_id)
+  const [preview, setPreview] = useState<ImportResult | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function run(dry: boolean, text = csv) {
+    setBusy(true)
+    try {
+      const r = await hub.importProducts(text, dry, location)
+      setPreview(r)
+      if (!dry) {
+        toast.success(`Imported: ${r.created} new, ${r.updated} updated`)
+        qc.invalidateQueries()
+        if (r.errors.length === 0) onClose()
+      }
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0]
+    if (!f) return
+    const text = await f.text()
+    setFileName(f.name)
+    setCsv(text)
+    setPreview(null)
+    run(true, text)
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Import products from a spreadsheet</DialogTitle>
+          <DialogDescription>
+            Save your spreadsheet as CSV. Existing items are matched by SKU or barcode and updated; new ones are created with their opening stock. Nothing changes until you confirm.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+          <div className="mb-1 font-medium text-foreground">Columns (first row), in any order</div>
+          <b>name</b> and <b>price</b> are needed for new items. Optional: variant, sku, barcode (several separated by |), cost, quantity, category (created if new), unit,
+          tax_rate (%), reorder_level, description. Any other column, such as author, isbn, brand or strength, is kept as a product detail. Quantity only applies to new items; use
+          a stock count to correct existing stock.
+          <button
+            type="button"
+            className="ml-1 font-medium text-primary underline-offset-2 hover:underline"
+            onClick={async () => {
+              const path = await api.saveTextFile("products-template.csv", sampleCSV)
+              if (path) toast.success("Saved " + path)
+            }}
+          >
+            Download an example
+          </button>
+        </div>
+        <div className="grid grid-cols-2 items-end gap-3">
+          <label className="flex h-10 cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 text-sm hover:bg-muted/50">
+            <FileUp className="size-4" />
+            <span className="truncate">{fileName || "Choose a CSV file…"}</span>
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={onFile} />
+          </label>
+          <LocationSelect value={location} onChange={setLocation} />
+        </div>
+        {busy && !preview && <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />}
+        {preview && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-lg border p-3">
+                <div className="text-2xl font-semibold tabular">{preview.created}</div>
+                <div className="text-xs text-muted-foreground">{preview.dry_run ? "will be created" : "created"}</div>
+              </div>
+              <div className="rounded-lg border p-3">
+                <div className="text-2xl font-semibold tabular">{preview.updated}</div>
+                <div className="text-xs text-muted-foreground">{preview.dry_run ? "will be updated" : "updated"}</div>
+              </div>
+              <div className={cn("rounded-lg border p-3", preview.errors.length > 0 && "border-destructive/40")}>
+                <div className="text-2xl font-semibold tabular">{preview.errors.length}</div>
+                <div className="text-xs text-muted-foreground">rows with problems</div>
+              </div>
+            </div>
+            {preview.new_categories.length > 0 && <p className="text-sm text-muted-foreground">New categories: {preview.new_categories.join(", ")}</p>}
+            {preview.errors.length > 0 && (
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-destructive/30 bg-destructive/5 p-2 text-sm">
+                {preview.errors.map((e, i) => (
+                  <div key={i} className="py-0.5">
+                    <span className="font-medium tabular">Row {e.row}:</span> {e.message}
+                  </div>
+                ))}
+              </div>
+            )}
+            {preview.dry_run && preview.errors.length > 0 && <p className="text-sm text-muted-foreground">Rows with problems are skipped; fix them in the file and import again any time.</p>}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            {preview && !preview.dry_run ? "Close" : "Cancel"}
+          </Button>
+          {preview?.dry_run && (
+            <Button onClick={() => run(false)} disabled={busy || preview.created + preview.updated === 0}>
+              {busy && <Loader2 className="animate-spin" />} Import {preview.created + preview.updated} item{preview.created + preview.updated === 1 ? "" : "s"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

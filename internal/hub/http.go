@@ -145,7 +145,179 @@ func (h *Hub) Handler() http.Handler {
 		respond(w, map[string]bool{"ok": true}, h.SaveSettings(r.Context(), s, req))
 	}))
 
+	h.backOfficeRoutes(mux)
 	return recoverer(h, mux)
+}
+
+// backOfficeRoutes registers the admin API used by the back-office screens.
+// Every handler checks the session's role itself.
+func (h *Hub) backOfficeRoutes(mux *http.ServeMux) {
+	type sh = func(http.ResponseWriter, *http.Request, *Session)
+	handle := func(pattern string, fn sh) { mux.Handle(pattern, h.session(fn)) }
+	qi := func(r *http.Request, k string) int64 {
+		n, _ := strconv.ParseInt(r.URL.Query().Get(k), 10, 64)
+		return n
+	}
+	qs := func(r *http.Request, k string) string { return r.URL.Query().Get(k) }
+	ok := map[string]bool{"ok": true}
+
+	// Suppliers & purchasing.
+	handle("GET /api/admin/suppliers", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListSuppliers(r.Context(), s)
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/suppliers", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.Supplier
+		if readJSON(w, r, &in) {
+			id, err := h.SaveSupplier(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("GET /api/admin/purchase-orders", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListPurchaseOrders(r.Context(), s, qs(r, "status"), qs(r, "supplier"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/purchase-orders/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.GetPurchaseOrder(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/purchase-orders", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.PurchaseOrderInput
+		if readJSON(w, r, &in) {
+			id, err := h.SavePurchaseOrder(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("POST /api/admin/purchase-orders/{id}/status", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in struct {
+			Status string `json:"status"`
+		}
+		if readJSON(w, r, &in) {
+			respond(w, ok, h.SetPurchaseOrderStatus(r.Context(), s, r.PathValue("id"), in.Status))
+		}
+	})
+	handle("GET /api/admin/receipts", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListGoodsReceipts(r.Context(), s, qs(r, "supplier"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/receipts/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.GetGoodsReceipt(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/receipts", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.GoodsReceiptInput
+		if readJSON(w, r, &in) {
+			id, err := h.ReceiveGoods(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+
+	// Locations, transfers, counts, ledger.
+	handle("GET /api/admin/locations", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListLocations(r.Context(), s)
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/locations", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.Location
+		if readJSON(w, r, &in) {
+			id, err := h.SaveLocation(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("GET /api/admin/transfers", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListTransfers(r.Context(), s)
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/transfers/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.GetTransfer(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/transfers", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in TransferInput
+		if readJSON(w, r, &in) {
+			id, err := h.TransferStock(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("GET /api/admin/counts", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListStockCounts(r.Context(), s)
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/counts", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in StockCountInput
+		if readJSON(w, r, &in) {
+			id, err := h.CreateStockCount(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("GET /api/admin/counts/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.GetStockCount(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/counts/{id}/entries", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.StockCountEntry
+		if readJSON(w, r, &in) {
+			v, err := h.CountEntry(r.Context(), s, r.PathValue("id"), in)
+			respond(w, v, err)
+		}
+	})
+	handle("POST /api/admin/counts/{id}/post", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.StockCountPost
+		if readJSON(w, r, &in) {
+			respond(w, ok, h.PostStockCount(r.Context(), s, r.PathValue("id"), in))
+		}
+	})
+	handle("POST /api/admin/counts/{id}/cancel", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		respond(w, ok, h.CancelStockCount(r.Context(), s, r.PathValue("id")))
+	})
+	handle("GET /api/admin/stock/movements", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.StockMovements(r.Context(), s, qs(r, "variant"), qs(r, "location"), int(qi(r, "limit")))
+		respond(w, v, err)
+	})
+
+	// Customer accounts.
+	handle("GET /api/admin/customers/{id}/statement", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.CustomerStatement(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/customers/{id}/adjust", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.BalanceAdjustment
+		if readJSON(w, r, &in) {
+			respond(w, ok, h.AdjustCustomerBalance(r.Context(), s, r.PathValue("id"), in))
+		}
+	})
+
+	// Reports.
+	handle("GET /api/admin/reports/sales", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.SalesReport(r.Context(), s, qi(r, "from"), qi(r, "to"), qs(r, "group"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/reports/stock", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.StockReport(r.Context(), s, StockReportFilter{LocationID: qs(r, "location"), CategoryID: qs(r, "category"),
+			Query: qs(r, "q"), Only: qs(r, "only"), Limit: int(qi(r, "limit"))})
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/reports/shifts", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ShiftReport(r.Context(), s, qi(r, "from"), qi(r, "to"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/audit", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.AuditLog(r.Context(), s, qi(r, "from"), qi(r, "to"), qs(r, "action"))
+		respond(w, v, err)
+	})
+
+	// Catalogue import / export.
+	handle("POST /api/admin/import/products", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in ImportRequest
+		if readJSON(w, r, &in) {
+			v, err := h.ImportProducts(r.Context(), s, in)
+			respond(w, v, err)
+		}
+	})
+	handle("GET /api/admin/export/products", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ExportProducts(r.Context(), s, qs(r, "location"))
+		respond(w, map[string]string{"csv": v}, err)
+	})
 }
 
 func (h *Hub) terminal(next http.HandlerFunc) http.Handler {

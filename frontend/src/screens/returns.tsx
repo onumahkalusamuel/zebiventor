@@ -82,7 +82,7 @@ function ReturnsScreen() {
 
   async function complete() {
     if (!sale || !ready) return
-    const tok = await requestApproval(`Refund ${fmt(total)} on receipt ${sale.sale.receipt_no}`)
+    const tok = await requestApproval(`Refund ${fmt(total)} on receipt ${sale.sale.receipt_no}`, "refund")
     if (tok === null) return
     setBusy(true)
     try {

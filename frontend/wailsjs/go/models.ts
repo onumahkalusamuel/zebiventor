@@ -23,6 +23,40 @@ export namespace discovery {
 
 export namespace main {
 	
+	export class AccountPaymentResult {
+	    payment?: protocol.AccountPayment;
+	    printed: boolean;
+	    print_error: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountPaymentResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.payment = this.convertValues(source["payment"], protocol.AccountPayment);
+	        this.printed = source["printed"];
+	        this.print_error = source["print_error"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class AppState {
 	    version: string;
 	    data_dir: string;
@@ -318,6 +352,50 @@ export namespace printing {
 
 export namespace protocol {
 	
+	export class AccountPayment {
+	    id: string;
+	    payment_no: string;
+	    customer_id: string;
+	    customer_name: string;
+	    terminal_id: string;
+	    shift_id: string;
+	    method_id: string;
+	    method_name: string;
+	    kind: string;
+	    amount_minor: number;
+	    reference: string;
+	    note: string;
+	    user_id: string;
+	    user_name: string;
+	    balance_before_minor: number;
+	    created_at: number;
+	    synced_at: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountPayment(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.payment_no = source["payment_no"];
+	        this.customer_id = source["customer_id"];
+	        this.customer_name = source["customer_name"];
+	        this.terminal_id = source["terminal_id"];
+	        this.shift_id = source["shift_id"];
+	        this.method_id = source["method_id"];
+	        this.method_name = source["method_name"];
+	        this.kind = source["kind"];
+	        this.amount_minor = source["amount_minor"];
+	        this.reference = source["reference"];
+	        this.note = source["note"];
+	        this.user_id = source["user_id"];
+	        this.user_name = source["user_name"];
+	        this.balance_before_minor = source["balance_before_minor"];
+	        this.created_at = source["created_at"];
+	        this.synced_at = source["synced_at"];
+	    }
+	}
 	export class CashMovement {
 	    id: string;
 	    shift_id: string;
@@ -419,6 +497,7 @@ export namespace protocol {
 	    kind: string;
 	    sales_minor: number;
 	    refunds_minor: number;
+	    payments_minor: number;
 	    net_minor: number;
 	
 	    static createFrom(source: any = {}) {
@@ -431,6 +510,7 @@ export namespace protocol {
 	        this.kind = source["kind"];
 	        this.sales_minor = source["sales_minor"];
 	        this.refunds_minor = source["refunds_minor"];
+	        this.payments_minor = source["payments_minor"];
 	        this.net_minor = source["net_minor"];
 	    }
 	}
@@ -512,6 +592,7 @@ export namespace protocol {
 	    price_minor: number;
 	    cost_minor: number;
 	    active: boolean;
+	    reorder_level_milli: number;
 	    barcodes: string[];
 	    opening_qty_milli: number;
 	    opening_location_id: string;
@@ -529,6 +610,7 @@ export namespace protocol {
 	        this.price_minor = source["price_minor"];
 	        this.cost_minor = source["cost_minor"];
 	        this.active = source["active"];
+	        this.reorder_level_milli = source["reorder_level_milli"];
 	        this.barcodes = source["barcodes"];
 	        this.opening_qty_milli = source["opening_qty_milli"];
 	        this.opening_location_id = source["opening_location_id"];
@@ -816,6 +898,9 @@ export namespace protocol {
 	    cash_refunds_minor: number;
 	    paid_in_minor: number;
 	    paid_out_minor: number;
+	    account_payments_count: number;
+	    account_payments_minor: number;
+	    cash_account_payments_minor: number;
 	    expected_cash_minor: number;
 	    counted_cash_minor: number;
 	    variance_minor: number;
@@ -841,6 +926,9 @@ export namespace protocol {
 	        this.cash_refunds_minor = source["cash_refunds_minor"];
 	        this.paid_in_minor = source["paid_in_minor"];
 	        this.paid_out_minor = source["paid_out_minor"];
+	        this.account_payments_count = source["account_payments_count"];
+	        this.account_payments_minor = source["account_payments_minor"];
+	        this.cash_account_payments_minor = source["cash_account_payments_minor"];
 	        this.expected_cash_minor = source["expected_cash_minor"];
 	        this.counted_cash_minor = source["counted_cash_minor"];
 	        this.variance_minor = source["variance_minor"];
@@ -1001,6 +1089,26 @@ export namespace protocol {
 
 export namespace terminal {
 	
+	export class AccountPaymentInput {
+	    customer_id: string;
+	    method_id: string;
+	    amount_minor: number;
+	    reference: string;
+	    note: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AccountPaymentInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.customer_id = source["customer_id"];
+	        this.method_id = source["method_id"];
+	        this.amount_minor = source["amount_minor"];
+	        this.reference = source["reference"];
+	        this.note = source["note"];
+	    }
+	}
 	export class CartLine {
 	    variant_id: string;
 	    qty_milli: number;
@@ -1127,6 +1235,7 @@ export namespace terminal {
 	    price_minor: number;
 	    cost_minor: number;
 	    active: boolean;
+	    reorder_level_milli: number;
 	    barcodes: string[];
 	    stock_milli: number;
 	
@@ -1143,6 +1252,7 @@ export namespace terminal {
 	        this.price_minor = source["price_minor"];
 	        this.cost_minor = source["cost_minor"];
 	        this.active = source["active"];
+	        this.reorder_level_milli = source["reorder_level_milli"];
 	        this.barcodes = source["barcodes"];
 	        this.stock_milli = source["stock_milli"];
 	    }

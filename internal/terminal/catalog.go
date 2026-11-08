@@ -249,7 +249,7 @@ func (t *Terminal) ListProducts(ctx context.Context, query string, limit int) ([
 		ids = append(ids, d.ID)
 	}
 	ph := strings.TrimSuffix(strings.Repeat("?,", len(out)), ",")
-	vrows, err := t.db.R().QueryContext(ctx, `SELECT v.id,v.product_id,v.name,v.sku,v.price_minor,v.cost_minor,v.active,
+	vrows, err := t.db.R().QueryContext(ctx, `SELECT v.id,v.product_id,v.name,v.sku,v.price_minor,v.cost_minor,v.active,v.reorder_level_milli,
 		COALESCE((SELECT qty_milli FROM stock_levels WHERE variant_id=v.id AND location_id=?1),0)
 		`+pendingStock+`,
 		COALESCE((SELECT group_concat(code, char(31)) FROM barcodes WHERE variant_id=v.id AND deleted=0),'')
@@ -261,7 +261,7 @@ func (t *Terminal) ListProducts(ctx context.Context, query string, limit int) ([
 	for vrows.Next() {
 		var vd VariantDetail
 		var codes string
-		if err := vrows.Scan(&vd.ID, &vd.ProductID, &vd.Name, &vd.SKU, &vd.PriceMinor, &vd.CostMinor, &vd.Active, &vd.StockMilli, &codes); err != nil {
+		if err := vrows.Scan(&vd.ID, &vd.ProductID, &vd.Name, &vd.SKU, &vd.PriceMinor, &vd.CostMinor, &vd.Active, &vd.ReorderLevelMilli, &vd.StockMilli, &codes); err != nil {
 			return nil, err
 		}
 		vd.Barcodes = []string{}
