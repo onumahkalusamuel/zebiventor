@@ -44,6 +44,48 @@ func (a *App) ReceiveTransferHere(id string, in protocol.TransferReceipt) error 
 	return a.term.ReceiveTransfer(a.ctx, u, id, in)
 }
 
+// TillLocations lists where this till can send stock (works offline).
+func (a *App) TillLocations() ([]terminal.Location, error) {
+	if _, err := a.currentUser(); err != nil {
+		return nil, err
+	}
+	return a.term.Locations(a.ctx)
+}
+
+// SendTransferHere sends stock from this till's location (queued, works offline).
+func (a *App) SendTransferHere(in terminal.SendTransferInput) (*protocol.StockTransfer, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return nil, err
+	}
+	return a.term.SendTransfer(a.ctx, u, in)
+}
+
+// OutgoingTransfers lists transfers sent here that the hub hasn't numbered yet.
+func (a *App) OutgoingTransfers() ([]protocol.StockTransfer, error) {
+	if _, err := a.currentUser(); err != nil {
+		return nil, err
+	}
+	return a.term.OutgoingTransfers(a.ctx)
+}
+
+// ExpectedDeliveries lists purchase orders due at this till's location (works offline).
+func (a *App) ExpectedDeliveries() ([]terminal.ExpectedDelivery, error) {
+	if _, err := a.currentUser(); err != nil {
+		return nil, err
+	}
+	return a.term.ExpectedDeliveries(a.ctx)
+}
+
+// ReceiveDeliveryHere books in a delivery against a purchase order (queued, works offline).
+func (a *App) ReceiveDeliveryHere(poID string, in terminal.DeliveryInput) error {
+	u, err := a.currentUser()
+	if err != nil {
+		return err
+	}
+	return a.term.ReceiveDelivery(a.ctx, u, poID, in)
+}
+
 // ---------- backups & restore (on the PC that runs the hub) ----------
 
 // ChooseFolder asks for a folder (a second drive, USB stick or network share).

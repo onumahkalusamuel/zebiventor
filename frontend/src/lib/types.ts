@@ -29,6 +29,8 @@ export interface SyncStatus {
   update_version: string
   version_error: string
   resent: number
+  encrypted: boolean
+  security_code: string
 }
 
 export interface Pairing {
@@ -236,6 +238,7 @@ export interface TerminalInfo {
   last_seen_at: number
   last_ip: string
   app_version: string
+  encrypted: boolean
 }
 
 export interface PairingCode {
@@ -255,6 +258,7 @@ export interface HubInfo {
   store_name: string
   version: string
   setup_complete: boolean
+  tls_fingerprint: string
 }
 
 export type TransportKind = "none" | "system" | "network" | "device"
@@ -408,6 +412,7 @@ export interface Return {
   total_minor: number
   tax_minor: number
   customer_name: string
+  refunds: { method_id: string; method_name: string; kind: string; amount_minor: number }[] | null
 }
 
 export interface ReturnResult {
@@ -995,4 +1000,24 @@ export interface EmailDraft {
 
 export interface IncomingTransfer extends StockTransfer {
   received_here: boolean
+}
+
+export const STORE_CREDIT = "store_credit"
+
+export interface NoReceiptInput {
+  lines: { variant_id: string; qty_milli: number; unit_refund_minor: number; restock: boolean }[]
+  customer_id: string
+  refunds: { method_id: string; amount_minor: number; reference: string }[]
+  reason: string
+  approval_token: string
+}
+
+export interface ExpectedDelivery {
+  order: PurchaseOrder
+  received_here: boolean
+}
+
+export interface TillLocation {
+  id: string
+  name: string
 }

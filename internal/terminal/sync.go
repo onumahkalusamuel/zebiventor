@@ -33,6 +33,10 @@ type Status struct {
 	// Restored: the hub was restored from a backup and this till re-sent
 	// what the backup was missing (count of records re-sent).
 	Resent int `json:"resent"`
+	// Encrypted: the connection to the hub uses TLS with a pinned
+	// certificate; SecurityCode is its short fingerprint.
+	Encrypted    bool   `json:"encrypted"`
+	SecurityCode string `json:"security_code"`
 }
 
 // Status returns the current sync status.
@@ -129,7 +133,8 @@ func (t *Terminal) onSyncError(ctx context.Context, err error, fails int) {
 	// The hub may have moved to a new IP (DHCP). Look for it by id.
 	if IsOffline(err) && fails > 0 && fails%3 == 0 && t.cfg.Discover != nil {
 		p, _ := t.Pairing(ctx)
-		if url, ok := t.cfg.Discover(ctx, p.HubID); ok && url != p.HubURL {
+		if url, ok := t.cfg.Discover(ctx, p.HubID); ok && t.sameScheme(ctx, url) != p.HubURL {
+			url = t.sameScheme(ctx, url)
 			t.log.Info("hub found at new address", "url", url)
 			_ = t.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error { return setKV(ctx, tx, "hub_url", url) })
 			t.updateStatus(func(s *Status) { s.HubURL = url })
@@ -189,6 +194,7 @@ func (t *Terminal) pullLoop(ctx context.Context) {
 		if t.hubRestored(ctx) {
 			continue // start again from the beginning
 		}
+		t.maybeUpgradeTLS(ctx)
 		if resp.Rev > since {
 			if err := t.applyPull(ctx, &resp); err != nil {
 				t.log.Error("applying pulled changes failed", "err", err)
@@ -242,7 +248,7 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 			}
 		}
 		for _, c := range r.Categories {
-			if err := exec(`INSERT INTO categories(id,parent_id,name,active) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+			if err := exec(`INSERT INTO categories(id,parent_id,name,active) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET stale=0,
 				parent_id=excluded.parent_id, name=excluded.name, active=excluded.active`, c.ID, c.ParentID, c.Name, boolInt(c.Active)); err != nil {
 				return err
 			}
@@ -250,7 +256,7 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 		for _, p := range r.Products {
 			attrs, _ := json.Marshal(p.Attributes)
 			if err := exec(`INSERT INTO products(id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,updated_at,search)
-				VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, category_id=excluded.category_id,
+				VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET stale=0, name=excluded.name, category_id=excluded.category_id,
 				description=excluded.description, attributes=excluded.attributes, unit=excluded.unit, allow_fraction=excluded.allow_fraction,
 				track_stock=excluded.track_stock, tax_rate_bp=excluded.tax_rate_bp, active=excluded.active, updated_at=excluded.updated_at, search=excluded.search`,
 				p.ID, p.Name, p.CategoryID, p.Description, string(attrs), p.Unit, boolInt(p.AllowFraction), boolInt(p.TrackStock),
@@ -259,7 +265,7 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 			}
 		}
 		for _, v := range r.Variants {
-			if err := exec(`INSERT INTO variants(id,product_id,name,sku,price_minor,cost_minor,active,reorder_level_milli) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+			if err := exec(`INSERT INTO variants(id,product_id,name,sku,price_minor,cost_minor,active,reorder_level_milli) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET stale=0,
 				product_id=excluded.product_id, name=excluded.name, sku=excluded.sku, price_minor=excluded.price_minor,
 				cost_minor=excluded.cost_minor, active=excluded.active, reorder_level_milli=excluded.reorder_level_milli`,
 				v.ID, v.ProductID, v.Name, v.SKU, v.PriceMinor, v.CostMinor, boolInt(v.Active), v.ReorderLevelMilli); err != nil {
@@ -267,7 +273,7 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 			}
 		}
 		for _, b := range r.Barcodes {
-			if err := exec(`INSERT INTO barcodes(code,variant_id,pack_qty_milli,deleted) VALUES(?,?,?,?) ON CONFLICT(code) DO UPDATE SET
+			if err := exec(`INSERT INTO barcodes(code,variant_id,pack_qty_milli,deleted) VALUES(?,?,?,?) ON CONFLICT(code) DO UPDATE SET stale=0,
 				variant_id=excluded.variant_id, pack_qty_milli=excluded.pack_qty_milli, deleted=excluded.deleted`,
 				b.Code, b.VariantID, b.PackQtyMilli, boolInt(b.Deleted)); err != nil {
 				return err
@@ -275,7 +281,7 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 		}
 		for _, m := range r.PaymentMethods {
 			if err := exec(`INSERT INTO payment_methods(id,name,kind,requires_reference,opens_drawer,sort_order,active) VALUES(?,?,?,?,?,?,?)
-				ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind, requires_reference=excluded.requires_reference,
+				ON CONFLICT(id) DO UPDATE SET stale=0, name=excluded.name, kind=excluded.kind, requires_reference=excluded.requires_reference,
 				opens_drawer=excluded.opens_drawer, sort_order=excluded.sort_order, active=excluded.active`,
 				m.ID, m.Name, m.Kind, boolInt(m.RequiresReference), boolInt(m.OpensDrawer), m.SortOrder, boolInt(m.Active)); err != nil {
 				return err
@@ -305,6 +311,14 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 		}
 		if err := saveTransfers(ctx, tx, r.Transfers); err != nil {
 			return err
+		}
+		if err := savePurchaseOrders(ctx, tx, r.PurchaseOrders); err != nil {
+			return err
+		}
+		if !r.More {
+			if err := finishResync(ctx, tx); err != nil {
+				return err
+			}
 		}
 		return setKV(ctx, tx, "last_rev", strconv.FormatInt(r.Rev, 10))
 	})
@@ -419,6 +433,14 @@ func (t *Terminal) pushOnce(ctx context.Context) (int, error) {
 						r.ID, protocol.OpTransferIn); err != nil {
 						return err
 					}
+					if _, err := tx.ExecContext(ctx, `DELETE FROM transfers WHERE sent_locally=1 AND id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
+						r.ID, protocol.OpTransferOut); err != nil {
+						return err
+					}
+					if _, err := tx.ExecContext(ctx, `UPDATE purchase_orders SET received_locally=0 WHERE id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
+						r.ID, protocol.OpGoodsIn); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
@@ -449,4 +471,38 @@ func (t *Terminal) RetryRejected(ctx context.Context) error {
 	t.refreshCounts(ctx)
 	t.Nudge()
 	return err
+}
+
+// Full resync after the hub's data was put back: everything is marked stale
+// first, and what the hub doesn't send again is retired (never deleted:
+// old sales still refer to it).
+var resyncTables = []string{"products", "variants", "barcodes", "categories", "payment_methods"}
+
+func startResync(ctx context.Context, tx *sql.Tx) error {
+	for _, tbl := range resyncTables {
+		if _, err := tx.ExecContext(ctx, "UPDATE "+tbl+" SET stale=1"); err != nil {
+			return err
+		}
+	}
+	return setKV(ctx, tx, "resync", "1")
+}
+
+func finishResync(ctx context.Context, tx *sql.Tx) error {
+	var v string
+	_ = tx.QueryRowContext(ctx, "SELECT value FROM kv WHERE key='resync'").Scan(&v)
+	if v != "1" {
+		return nil
+	}
+	for _, q := range []string{
+		"UPDATE products SET active=0, stale=0 WHERE stale=1",
+		"UPDATE variants SET active=0, stale=0 WHERE stale=1",
+		"UPDATE barcodes SET deleted=1, stale=0 WHERE stale=1",
+		"UPDATE categories SET active=0, stale=0 WHERE stale=1",
+		"UPDATE payment_methods SET active=0, stale=0 WHERE stale=1",
+	} {
+		if _, err := tx.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+	return setKV(ctx, tx, "resync", "")
 }

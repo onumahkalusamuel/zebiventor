@@ -124,6 +124,9 @@ func (h *Hub) applyReturn(ctx context.Context, tx *sql.Tx, t *Terminal, op proto
 			onAccount += p.AmountMinor
 		}
 	}
+	if err := summariseReturn(ctx, tx, r.ID); err != nil {
+		return err
+	}
 	return postLedger(ctx, tx, ledgerEntry{CustomerID: r.CustomerID, Kind: "return", RefID: r.ID, RefNo: r.ReturnNo, Amount: -onAccount,
 		At: r.CreatedAt, UserID: r.UserID, UserName: r.UserName, TerminalID: t.ID})
 }

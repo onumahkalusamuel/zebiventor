@@ -433,7 +433,7 @@ func upsertPaymentMethod(ctx context.Context, tx *sql.Tx, m protocol.PaymentMeth
 var editableSettings = map[string]bool{
 	"store_name": true, "business_type": true, "store_address": true, "store_phone": true, "store_email": true,
 	"tax_id": true, "currency_code": true, "currency_symbol": true, "receipt_header": true, "receipt_footer": true,
-	"tax_mode": true, "tax_name": true, "product_fields": true, "units": true, "default_tax_bp": true,
+	"tax_mode": true, "tax_name": true, "product_fields": true, "units": true, "default_tax_bp": true, "require_encryption": true,
 	"approval_discount": true, "approval_price_override": true, "approval_refund": true, "approval_paid_out": true, "approval_no_sale": true,
 }
 
@@ -454,7 +454,7 @@ func (h *Hub) SaveSettings(ctx context.Context, by *Session, values map[string]s
 		return invalid("tax mode must be none, inclusive or exclusive")
 	}
 	for k, v := range values {
-		if strings.HasPrefix(k, "approval_") && v != "0" && v != "1" {
+		if (strings.HasPrefix(k, "approval_") || k == "require_encryption") && v != "0" && v != "1" {
 			return invalid("%s must be 0 or 1", k)
 		}
 	}

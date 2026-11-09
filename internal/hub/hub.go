@@ -6,6 +6,7 @@ package hub
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"embed"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/ids"
@@ -51,6 +53,10 @@ type Hub struct {
 
 	pairLimiter  *limiter
 	loginLimiter *limiter
+
+	cert        tls.Certificate
+	fingerprint string      // of cert; tills pin it
+	serving     atomic.Bool // Serve is running (TLS available on the port)
 
 	backupMu sync.Mutex
 	upd      updateStore
@@ -89,11 +95,19 @@ func Open(ctx context.Context, cfg Config) (*Hub, error) {
 		pairLimiter:  newLimiter(10, time.Minute),
 		loginLimiter: newLimiter(20, time.Minute),
 	}
+	if err := h.ensureCert(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err := h.ensureEpoch(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
 	if err := h.backfillShopSettings(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := h.buildSummaries(ctx); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -257,6 +271,7 @@ func (h *Hub) Info(ctx context.Context) protocol.HubInfo {
 		Version:         h.cfg.Version,
 		ProtocolVersion: protocol.Version,
 		SetupComplete:   h.IsSetup(ctx),
+		TLSFingerprint:  h.fingerprint,
 		Rev:             h.currentRev(ctx),
 		ServerTime:      ids.NowMs(),
 	}
@@ -283,7 +298,7 @@ func putSetting(ctx context.Context, tx *sql.Tx, key, value string, now int64) e
 // privateSettings never leave the hub (nor do keys with privatePrefixes).
 var (
 	privateSettings = map[string]bool{"next_sku": true, "last_backup_at": true, "data_epoch": true}
-	privatePrefixes = []string{"seq.", "backup_", "update_", "smtp_"}
+	privatePrefixes = []string{"seq.", "backup_", "update_", "smtp_", "tls_"}
 )
 
 func isPrivateSetting(key string) bool {

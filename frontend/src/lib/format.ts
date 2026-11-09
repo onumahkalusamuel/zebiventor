@@ -148,3 +148,9 @@ export function compareVersions(a: string, b: string): number {
   if (!y.pre) return -1
   return x.pre < y.pre ? -1 : 1
 }
+
+/** Short form of a hub certificate fingerprint ("4F2A-91C3"), compared by eye when pairing. */
+export function securityCode(fp: string | undefined): string {
+  if (!fp || fp.length < 8) return ""
+  return (fp.slice(0, 4) + "-" + fp.slice(4, 8)).toUpperCase()
+}

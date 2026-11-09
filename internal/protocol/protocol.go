@@ -44,6 +44,7 @@ const (
 	EntityStockLevel    = "stock_level"
 	EntityCustomer      = "customer"
 	EntityTransfer      = "transfer"
+	EntityPurchaseOrder = "purchase_order"
 )
 
 // ---------- master data (flows hub -> terminals) ----------
@@ -218,6 +219,8 @@ const (
 	OpCustomerUpsert = "customer.upsert"
 	OpAccountPayment = "account.payment"
 	OpTransferIn     = "transfer.receive"
+	OpTransferOut    = "transfer.send"
+	OpGoodsIn        = "goods.receive"
 )
 
 // AccountPayment is money received from a customer against what they owe
@@ -414,6 +417,7 @@ type PullResponse struct {
 	StockLevels    []StockLevel    `json:"stock_levels,omitempty"`
 	Customers      []Customer      `json:"customers,omitempty"`
 	Transfers      []StockTransfer `json:"transfers,omitempty"`
+	PurchaseOrders []PurchaseOrder `json:"purchase_orders,omitempty"`
 }
 
 // ---------- pairing & auth ----------
@@ -424,6 +428,7 @@ type HubInfo struct {
 	Version         string `json:"version"`
 	ProtocolVersion int    `json:"protocol_version"`
 	SetupComplete   bool   `json:"setup_complete"`
+	TLSFingerprint  string `json:"tls_fingerprint"` // hub certificate (tills pin it)
 	Rev             int64  `json:"rev"`
 	ServerTime      int64  `json:"server_time"`
 }
@@ -476,6 +481,7 @@ type TerminalInfo struct {
 	LastSeenAt    int64  `json:"last_seen_at"`
 	LastIP        string `json:"last_ip"`
 	AppVersion    string `json:"app_version"`
+	Encrypted     bool   `json:"encrypted"` // last connection used TLS
 }
 
 // ProductInput is an upsert of a product with its variants and barcodes.

@@ -176,9 +176,14 @@ func (a *App) EmailDocument(kind, id string, d EmailDraft) error {
 	if err != nil {
 		return err
 	}
+	pdf, err := doc.PDF()
+	if err != nil {
+		return err
+	}
 	name := docName(doc)
 	msg := map[string]any{"to": []string{d.To}, "cc": []string{d.Cc}, "subject": d.Subject, "text": d.Message,
-		"html": string(html), "attachment": safeFileName(name) + ".html", "kind": kind, "ref": doc.Number}
+		"html": string(html), "attachment": safeFileName(name) + ".pdf", "attachment_data": pdf, "attachment_type": "application/pdf",
+		"kind": kind, "ref": doc.Number}
 	if err := a.term.Admin(a.ctx, http.MethodPost, "/api/admin/email/send", msg, nil); err != nil {
 		return err
 	}

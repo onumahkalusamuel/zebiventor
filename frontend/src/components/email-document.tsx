@@ -52,7 +52,7 @@ function EmailDialog({ kind, id, initial, onClose }: { kind: DocumentKind; id: s
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Email {d.subject.split(" from ")[0].toLowerCase()}</DialogTitle>
-          <DialogDescription>The document goes in the email and as an attachment they can print.</DialogDescription>
+          <DialogDescription>The document goes in the email and as a PDF attachment.</DialogDescription>
         </DialogHeader>
         {!initial.ready ? (
           <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">

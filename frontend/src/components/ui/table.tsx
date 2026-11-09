@@ -49,14 +49,31 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
   )
 }
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
+function TableRow({ className, onClick, onKeyDown, ...props }: React.ComponentProps<"tr">) {
+  // A row that opens something can be reached with Tab and opened with
+  // Enter or Space, like a button.
+  const keyboard = onClick
+    ? {
+        tabIndex: 0,
+        onKeyDown: (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+          onKeyDown?.(e)
+          if (!e.defaultPrevented && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault()
+            e.currentTarget.click()
+          }
+        },
+      }
+    : { onKeyDown }
   return (
     <tr
       data-slot="table-row"
       className={cn(
         "border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted",
+        onClick && "focus-visible:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
         className
       )}
+      onClick={onClick}
+      {...keyboard}
       {...props}
     />
   )

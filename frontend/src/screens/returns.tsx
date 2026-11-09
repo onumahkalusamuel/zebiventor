@@ -12,7 +12,8 @@ import { Switch } from "@/components/ui/switch"
 import { api, errorMessage } from "@/lib/api"
 import { formatDateTime, formatQty } from "@/lib/format"
 import { useMoney } from "@/lib/state"
-import type { ReturnableLine, ReturnableSale, ReturnResult } from "@/lib/types"
+import { STORE_CREDIT, type ReturnableLine, type ReturnableSale, type ReturnResult } from "@/lib/types"
+import { NoReceiptReturn } from "./returns-no-receipt"
 import { cn } from "@/lib/utils"
 
 const reasons = ["Damaged", "Wrong item", "Changed mind", "Duplicate copy", "Faulty / defective"]
@@ -48,6 +49,7 @@ function ReturnsScreen() {
   const [reference, setReference] = useState("")
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<ReturnResult | null>(null)
+  const [noReceipt, setNoReceipt] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => inputRef.current?.focus(), [])
@@ -110,6 +112,16 @@ function ReturnsScreen() {
   }
 
   if (done) return <ReturnDone result={done} onNext={reset} />
+  if (noReceipt)
+    return (
+      <NoReceiptReturn
+        onBack={() => setNoReceipt(false)}
+        onDone={(r) => {
+          setNoReceipt(false)
+          setDone(r)
+        }}
+      />
+    )
 
   return (
     <div className="grid h-full grid-cols-[1fr_400px]">
@@ -119,6 +131,7 @@ function ReturnsScreen() {
             <Search className="pointer-events-none absolute top-1/2 left-4 size-5 -translate-y-1/2 text-muted-foreground" />
             <Input
               ref={inputRef}
+              aria-label="Receipt number"
               value={receipt}
               onChange={(e) => setReceipt(e.target.value)}
               placeholder="Scan the QR code on the receipt, or type the receipt number (e.g. T01-000042)"
@@ -137,6 +150,9 @@ function ReturnsScreen() {
                 <div className="font-medium text-foreground">Find the original sale</div>
                 <div className="text-sm">Receipts from this till work offline; other tills’ receipts need the hub.</div>
               </div>
+              <Button variant="outline" onClick={() => setNoReceipt(true)}>
+                No receipt? Return without one
+              </Button>
             </div>
           ) : (
             <div className="space-y-4">
@@ -186,11 +202,11 @@ function ReturnsScreen() {
                         </label>
                       )}
                       <div className="flex items-center gap-1.5">
-                        <Button variant="outline" size="icon-sm" disabled={q <= 0} onClick={() => set(q - 1000)}>
+                        <Button aria-label={`One less ${l.product_name}`} variant="outline" size="icon-sm" disabled={q <= 0} onClick={() => set(q - 1000)}>
                           <Minus />
                         </Button>
                         <div className="w-10 text-center font-semibold tabular">{formatQty(q)}</div>
-                        <Button variant="outline" size="icon-sm" disabled={q >= l.returnable_milli} onClick={() => set(q + 1000)}>
+                        <Button aria-label={`One more ${l.product_name}`} variant="outline" size="icon-sm" disabled={q >= l.returnable_milli} onClick={() => set(q + 1000)}>
                           <Plus />
                         </Button>
                       </div>
@@ -219,6 +235,7 @@ function ReturnsScreen() {
                 <button
                   key={r}
                   onClick={() => setReason(r)}
+                  aria-pressed={reason === r}
                   className={cn("rounded-full border px-3 py-1 text-sm transition-colors", reason === r ? "border-primary bg-accent text-accent-foreground" : "hover:bg-muted")}
                 >
                   {r}
@@ -236,6 +253,7 @@ function ReturnsScreen() {
                   <button
                     key={m.id}
                     onClick={() => setMethodId(m.id)}
+                    aria-pressed={methodId === m.id}
                     className={cn("rounded-lg border p-2.5 text-sm font-medium transition-colors", methodId === m.id ? "border-primary bg-accent text-accent-foreground" : "hover:bg-muted")}
                   >
                     {m.kind === "credit" ? "Customer account" : m.name}
@@ -275,11 +293,13 @@ function ReturnDone({ result, onNext }: { result: ReturnResult; onNext: () => vo
         <div>
           <h2 className="text-2xl font-semibold">Refund complete</h2>
           <p className="mt-1 text-muted-foreground">
-            {result.return.return_no} against {result.return.sale_receipt_no}
+            {result.return.return_no} {result.return.sale_receipt_no ? `against ${result.return.sale_receipt_no}` : "without a receipt"}
           </p>
         </div>
         <div className="rounded-2xl border-2 border-primary/30 bg-accent/50 px-10 py-5">
-          <div className="text-xs font-medium tracking-wide text-accent-foreground uppercase">Give back</div>
+          <div className="text-xs font-medium tracking-wide text-accent-foreground uppercase">
+            {result.return.refunds?.every((f) => f.method_id === STORE_CREDIT) ? "Store credit given" : "Give back"}
+          </div>
           <div className="text-5xl font-semibold tracking-tight text-accent-foreground tabular">{fmt(result.return.total_minor)}</div>
         </div>
         <div className="flex w-full max-w-sm gap-2">

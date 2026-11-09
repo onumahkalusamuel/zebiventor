@@ -33,6 +33,10 @@ func (h *Hub) Handler() http.Handler {
 		writeJSON(w, http.StatusOK, h.Info(r.Context()))
 	})
 	mux.HandleFunc("POST /api/pair", func(w http.ResponseWriter, r *http.Request) {
+		if servedPlain(r) && h.requireEncryption(r.Context()) {
+			writeJSON(w, http.StatusUpgradeRequired, protocol.APIError{Error: "The hub only accepts encrypted connections; update this till's app.", Code: "tls"})
+			return
+		}
 		var req protocol.PairRequest
 		if !readJSON(w, r, &req) {
 			return
@@ -392,6 +396,7 @@ const (
 	HeaderHubVersion = "X-Zebi-Hub-Version" // hub's app version
 	HeaderEpoch      = "X-Zebi-Epoch"       // changes when a backup is restored
 	HeaderUpdate     = "X-Zebi-Update"      // newest version the hub holds for the till's platform
+	HeaderTLS        = "X-Zebi-TLS"         // hub certificate fingerprint, when TLS is on the port
 	HeaderRev        = "X-Zebi-Rev"         // hub's latest change number (on pulls)
 )
 
@@ -403,7 +408,11 @@ func (h *Hub) terminal(next http.HandlerFunc) http.Handler { return h.terminalAu
 func (h *Hub) terminalAuth(next http.HandlerFunc, checkVersion bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		t, err := h.AuthTerminal(r.Context(), tok, clientIP(r), r.Header.Get(HeaderVersion))
+		if servedPlain(r) && checkVersion && h.requireEncryption(r.Context()) {
+			writeJSON(w, http.StatusUpgradeRequired, protocol.APIError{Error: "The hub only accepts encrypted connections. Update this till, then pair it again if asked.", Code: "tls"})
+			return
+		}
+		t, err := h.AuthTerminal(r.Context(), tok, clientIP(r), r.Header.Get(HeaderVersion), encryptedRequest(r))
 		if err != nil {
 			respond(w, nil, err)
 			return
@@ -426,6 +435,9 @@ func (h *Hub) versionHeaders(w http.ResponseWriter, r *http.Request) {
 	hd := w.Header()
 	hd.Set(HeaderHubVersion, h.cfg.Version)
 	hd.Set(HeaderProtocol, strconv.Itoa(protocol.Version))
+	if h.serving.Load() {
+		hd.Set(HeaderTLS, h.fingerprint)
+	}
 	if h.epoch != "" {
 		hd.Set(HeaderEpoch, h.epoch)
 	}
@@ -513,11 +525,17 @@ func respond(w http.ResponseWriter, v any, err error) {
 // Serve listens on addr until ctx is cancelled, then shuts down gracefully.
 // ready, if non-nil, receives the bound address once listening.
 func (h *Hub) Serve(ctx context.Context, addr string, ready func(net.Addr)) error {
-	ln, err := net.Listen("tcp", addr)
+	raw, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
+	ln := &sniffListener{Listener: raw, cfg: h.tlsConfig()}
+	h.serving.Store(true)
+	defer h.serving.Store(false)
 	srv := &http.Server{
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, connKey{}, c)
+		},
 		Handler:           h.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
@@ -547,4 +565,9 @@ func (h *Hub) Serve(ctx context.Context, addr string, ready func(net.Addr)) erro
 func startOfDayMs() int64 {
 	now := time.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).UnixMilli()
+}
+
+func (h *Hub) requireEncryption(ctx context.Context) bool {
+	v, _ := h.Setting(ctx, "require_encryption")
+	return v == "1"
 }

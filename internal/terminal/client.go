@@ -3,12 +3,16 @@ package terminal
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
@@ -37,6 +41,7 @@ func isTerminalRevoked(err error) bool {
 
 type client struct {
 	http *http.Client
+	tls  *pinner
 	// headers adds the till's version to each request; onResponse sees
 	// every hub response's headers (set once at start-up).
 	headers    func(http.Header)
@@ -44,11 +49,53 @@ type client struct {
 }
 
 func newClient() *client {
-	return &client{http: &http.Client{Transport: &http.Transport{
+	pn := &pinner{}
+	return &client{tls: pn, http: &http.Client{Transport: &http.Transport{
 		MaxIdleConnsPerHost:   4,
 		IdleConnTimeout:       90 * time.Second,
 		ResponseHeaderTimeout: 40 * time.Second, // long-poll waits up to 30s
+		TLSHandshakeTimeout:   10 * time.Second,
+		// The hub's certificate is self-signed: it is checked against the
+		// fingerprint pinned at pairing instead of a certificate authority.
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12, VerifyConnection: pn.verify},
 	}}}
+}
+
+var errCertChanged = errors.New("certificate changed")
+
+// pinner checks the hub's certificate against the pinned fingerprint. With
+// nothing pinned (pairing), it accepts and remembers what it saw.
+type pinner struct {
+	mu   sync.Mutex
+	pin  string
+	seen string
+}
+
+func (p *pinner) set(fp string) {
+	p.mu.Lock()
+	p.pin = fp
+	p.mu.Unlock()
+}
+
+func (p *pinner) get() (pin, seen string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.pin, p.seen
+}
+
+func (p *pinner) verify(cs tls.ConnectionState) error {
+	if len(cs.PeerCertificates) == 0 {
+		return errors.New("hub sent no certificate")
+	}
+	sum := sha256.Sum256(cs.PeerCertificates[0].Raw)
+	fp := hex.EncodeToString(sum[:])
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.seen = fp
+	if p.pin != "" && p.pin != fp {
+		return errCertChanged
+	}
+	return nil
 }
 
 // NormalizeHubURL turns "192.168.1.5" or "192.168.1.5:7420" into a full URL.
@@ -95,6 +142,10 @@ func (c *client) do(ctx context.Context, timeout time.Duration, method, url, tok
 		c.headers(req.Header)
 	}
 	resp, err := c.http.Do(req)
+	if errors.Is(err, errCertChanged) {
+		return &HTTPError{Status: 495, Code: "cert", Msg: "The hub's security certificate has changed, so this till stopped talking to it. " +
+			"If the hub was reinstalled or moved to a new PC without restoring a backup, pair this till again (Settings → Connection)."}
+	}
 	if err != nil {
 		return fmt.Errorf("hub unreachable: %w", err)
 	}

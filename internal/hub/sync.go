@@ -228,6 +228,23 @@ func fetchChunk(ctx context.Context, tx *sql.Tx, entity string, idList []string,
 		}
 		resp.Transfers = append(resp.Transfers, list...)
 		return nil
+	case protocol.EntityPurchaseOrder:
+		var list []protocol.PurchaseOrder
+		if err := q(poSelect+" WHERE o.id IN ("+in+")", func(r *sql.Rows) error {
+			o, err := scanPO(r)
+			list = append(list, o)
+			return err
+		}); err != nil {
+			return err
+		}
+		for i := range list {
+			var err error
+			if list[i].Lines, err = poLines(ctx, tx, list[i].ID); err != nil {
+				return err
+			}
+		}
+		resp.PurchaseOrders = append(resp.PurchaseOrders, list...)
+		return nil
 	}
 	return nil // unknown entity: newer hub feature, ignore
 }
@@ -286,6 +303,10 @@ func (h *Hub) applyOp(ctx context.Context, t *Terminal, op protocol.Op) (protoco
 			applyErr = h.applyAccountPayment(ctx, tx, t, op)
 		case protocol.OpTransferIn:
 			applyErr = applyTransferIn(ctx, tx, t, op)
+		case protocol.OpTransferOut:
+			applyErr = applyTransferOut(ctx, tx, t, op)
+		case protocol.OpGoodsIn:
+			applyErr = h.applyGoodsIn(ctx, tx, t, op)
 		default:
 			applyErr = invalid("unsupported op kind %q", op.Kind)
 		}
@@ -432,6 +453,9 @@ func (h *Hub) applySale(ctx context.Context, tx *sql.Tx, t *Terminal, op protoco
 		if p.Kind == protocol.PayCredit {
 			onAccount += p.AmountMinor
 		}
+	}
+	if err := summariseSale(ctx, tx, s.ID); err != nil {
+		return err
 	}
 	return postLedger(ctx, tx, ledgerEntry{CustomerID: s.CustomerID, Kind: "sale", RefID: s.ID, RefNo: s.ReceiptNo, Amount: onAccount,
 		At: s.CreatedAt, UserID: s.UserID, UserName: s.UserName, TerminalID: t.ID})

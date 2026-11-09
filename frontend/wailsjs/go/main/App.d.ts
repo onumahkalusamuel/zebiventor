@@ -27,6 +27,8 @@ export function CloseShift(arg1:number,arg2:string):Promise<main.CloseShiftResul
 
 export function CompleteReturn(arg1:terminal.ReturnInput):Promise<main.ReturnResult>;
 
+export function CompleteReturnNoReceipt(arg1:terminal.NoReceiptInput):Promise<main.ReturnResult>;
+
 export function CompleteSale(arg1:terminal.SaleInput):Promise<main.SaleResult>;
 
 export function CreatePairingCode(arg1:string):Promise<protocol.PairingCode>;
@@ -40,6 +42,8 @@ export function DocumentEmailDraft(arg1:string,arg2:string):Promise<main.EmailDr
 export function DownloadUpdate():Promise<void>;
 
 export function EmailDocument(arg1:string,arg2:string,arg3:main.EmailDraft):Promise<void>;
+
+export function ExpectedDeliveries():Promise<Array<terminal.ExpectedDelivery>>;
 
 export function GetDiagnostics():Promise<main.Diagnostics>;
 
@@ -85,11 +89,15 @@ export function LookupCode(arg1:string):Promise<terminal.Item>;
 
 export function LookupForReturn(arg1:string):Promise<terminal.ReturnableSale>;
 
+export function NoReceiptPrice(arg1:string):Promise<number>;
+
 export function OpenDataFolder():Promise<void>;
 
 export function OpenDrawer(arg1:string):Promise<void>;
 
 export function OpenShift(arg1:number):Promise<protocol.Shift>;
+
+export function OutgoingTransfers():Promise<Array<protocol.StockTransfer>>;
 
 export function PaymentMethods():Promise<Array<protocol.PaymentMethod>>;
 
@@ -108,6 +116,8 @@ export function RecallHeldSale(arg1:string):Promise<terminal.HeldSale>;
 export function ReceiptPreview(arg1:string,arg2:boolean):Promise<string>;
 
 export function ReceiveAccountPayment(arg1:terminal.AccountPaymentInput):Promise<main.AccountPaymentResult>;
+
+export function ReceiveDeliveryHere(arg1:string,arg2:terminal.DeliveryInput):Promise<void>;
 
 export function ReceiveTransferHere(arg1:string,arg2:protocol.TransferReceipt):Promise<void>;
 
@@ -143,6 +153,8 @@ export function SearchCustomers(arg1:string):Promise<Array<protocol.Customer>>;
 
 export function SearchItems(arg1:string):Promise<Array<terminal.Item>>;
 
+export function SendTransferHere(arg1:terminal.SendTransferInput):Promise<protocol.StockTransfer>;
+
 export function SetHubAddress(arg1:string):Promise<void>;
 
 export function SetupHost(arg1:main.SetupHostInput):Promise<void>;
@@ -160,3 +172,5 @@ export function TestDrawer(arg1:main.PrinterConfig):Promise<void>;
 export function TestPreview(arg1:main.PrinterConfig):Promise<string>;
 
 export function TestPrint(arg1:main.PrinterConfig):Promise<void>;
+
+export function TillLocations():Promise<Array<terminal.Location>>;

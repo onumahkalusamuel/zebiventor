@@ -5,7 +5,7 @@ work that should be done is listed under a phase here and ticked off when it
 lands. Things only the shop owner can do (hardware, certificates) are listed
 under **Needs you**.
 
-Status: **phase 4 done** · next: **phase 5**
+Status: **phase 5 done** · all planned phases complete; remaining items need the owner (below)
 
 ## Phase 1 — Hub, tills, sync, printing ✅ `914cc8d`
 
@@ -44,7 +44,7 @@ Status: **phase 4 done** · next: **phase 5**
 - [x] Windows installer (`scripts/build-windows.sh`): app + headless hub, firewall rules for the LAN, hub service restarted on upgrade, store data kept on uninstall
 - [x] Fix: opening a single delivery failed (ambiguous column in the query)
 
-## Phase 4 — Setup, safety, updates ✅ branch `rebuild/phase-4`
+## Phase 4 — Setup, safety, updates ✅ `aa5aad4`
 
 - [x] Shop templates per business type (bookshop, grocery, pharmacy, distributor, fashion, hardware, general): categories, units, product details, payment methods, tax defaults; editable product details and units
 - [x] Daily backups copied to a second drive, USB or network folder, with retention and a warning when backups stop or fail
@@ -56,15 +56,16 @@ Status: **phase 4 done** · next: **phase 5**
 - [x] Branches: tills receive transfers and see what's on its way while offline (queued like sales); branch set-up over a private network documented
 - [x] Fix: long polls now end when the hub closes, so tills reconnect at once after a hub restart
 
-## Phase 5 — Hardening
+## Phase 5 — Hardening ✅ branch `rebuild/phase-5`
 
-- [ ] Encrypted LAN sync (TLS with the hub's certificate pinned at pairing)
-- [ ] Returns without a receipt (manager approval, refund or store credit)
-- [ ] Load test: 50,000 products, 1 million sales, 5 tills syncing at once; fix anything slow
-- [ ] Accessibility and keyboard-only pass over every screen
-- [ ] PDF attachments for emailed documents (currently HTML, which prints on any device but isn't a PDF)
-- [ ] Remove products from tills that the hub no longer has after its data is put back from an older copy
-- [ ] Send transfers and record deliveries at a branch while offline (receiving already works offline)
+- [x] Encrypted LAN sync: the hub serves TLS with its own certificate (kept in its database, so restores keep it); tills pin it at pairing and refuse any other; security code shown on both screens when pairing; tills paired earlier upgrade themselves; admins can refuse unencrypted connections once every till is updated (Tills)
+- [x] Returns without a receipt: manager approval always, refund up to today's price, money back or store credit
+- [x] Store credit: kept on the customer's account and spent at the till (works offline)
+- [x] Load test: 50,000 products, 1 million sales, 5 tills (`docs/LOADTEST.md`); daily sales summaries make year-long reports ~1000× faster, stock report 40× faster
+- [x] Accessibility and keyboard pass: every icon button named, clickable rows reachable and opened with Enter, labels tied to their fields, visible focus, pressed states, reduced motion; sale, payment, returns and receipts work keyboard-only
+- [x] PDF attachments for emailed documents
+- [x] Tills retire products the hub no longer has after its data is put back from an older copy
+- [x] Branch work offline: send transfers and receive purchase-order deliveries at a till without the hub
 
 ## Needs you
 
@@ -73,6 +74,9 @@ Status: **phase 4 done** · next: **phase 5**
   test page (the ruler must fill exactly one line) and try **Open drawer**. Make
   a sale and print its receipt. If anything is wrong, Settings → Connection →
   **Save support file** and send it over.
+
+## Later (parked by the owner)
+
 - [ ] **Release signing key:** run `go run ./cmd/zebirelease keygen` once, keep
   `release.key` safe and offline, and build releases with `ZEBI_UPDATE_KEY` set to
   the printed public key (`./scripts/release.sh`). Decide where releases are

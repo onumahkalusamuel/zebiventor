@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Check, Loader2, Monitor, Network, Radar, Server, Store } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, Loader2, Monitor, Network, Radar, Server, ShieldAlert, ShieldCheck, Store } from "lucide-react"
 import { toast } from "sonner"
 import { Wordmark } from "@/components/brand"
 import { Button } from "@/components/ui/button"
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { api, errorMessage } from "@/lib/api"
-import { businessTypes } from "@/lib/format"
+import { businessTypes, securityCode } from "@/lib/format"
 import { useAppState } from "@/lib/state"
 import type { DiscoveredHub, SetupHostInput } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -219,6 +219,24 @@ function JoinForm({ onBack }: { onBack: () => void }) {
   const [code, setCode] = useState("")
   const [name, setName] = useState("")
   const [busy, setBusy] = useState(false)
+  const [checked, setChecked] = useState<{ url: string; code: string; store: string; error: string } | null>(null)
+
+  // Look the address up as it's typed: store name and the hub's security code.
+  useEffect(() => {
+    if (!url.trim()) return
+    let live = true
+    const t = setTimeout(() => {
+      api.checkHub(url).then(
+        (info) => live && setChecked({ url, code: securityCode(info.tls_fingerprint), store: info.store_name, error: "" }),
+        (e) => live && setChecked({ url, code: "", store: "", error: errorMessage(e) }),
+      )
+    }, 400)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [url])
+  const check = checked?.url === url ? checked : null
 
   async function scan() {
     setScanning(true)
@@ -298,6 +316,28 @@ function JoinForm({ onBack }: { onBack: () => void }) {
       <Field label="Hub address" hint="e.g. 192.168.1.20 (port 7420 is assumed)">
         <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="192.168.1.20" />
       </Field>
+      {url && check && (
+        <div role="status" className={cn("flex items-start gap-2 rounded-lg border p-3 text-sm", check.error && "border-destructive/40 text-destructive")}>
+          {check.error ? (
+            check.error
+          ) : check.code ? (
+            <>
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+              <div>
+                <b>{check.store}</b> · encrypted connection, security code <b className="tabular">{check.code}</b>
+                <div className="text-xs text-muted-foreground">It should match the code shown under the pairing code on the hub. If it doesn't, don't connect.</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <div>
+                <b>{check.store}</b> · this hub is on an older version without encryption. Update the hub first if you can.
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label>Pairing code</Label>

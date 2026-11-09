@@ -295,6 +295,7 @@ export function Chips<T extends string>({ value, onChange, options }: { value: T
         <button
           key={o.value}
           type="button"
+          aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
           className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", value === o.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}
         >

@@ -120,12 +120,13 @@ function ShellInner() {
 
   return (
     <div className="flex h-full">
-      <nav className="flex w-[76px] shrink-0 flex-col items-center gap-0.5 overflow-y-auto bg-sidebar py-3 text-sidebar-foreground">
+      <nav aria-label="Main" className="flex w-[76px] shrink-0 flex-col items-center gap-0.5 overflow-y-auto bg-sidebar py-3 text-sidebar-foreground">
         <LogoMark className="mb-4 size-9" />
         {allowed.map((p) => (
           <button
             key={p.key}
             onClick={() => setPage(p.key)}
+            aria-current={page === p.key ? "page" : undefined}
             className={cn(
               "flex w-[64px] shrink-0 flex-col items-center gap-1 rounded-xl py-2 text-[11px] font-medium transition-colors",
               page === p.key
@@ -140,7 +141,7 @@ function ShellInner() {
         <div className="mt-auto flex flex-col items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
-              <button onClick={() => setDark(!dark)} className="grid size-10 place-items-center rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+              <button onClick={() => setDark(!dark)} aria-label={dark ? "Light mode" : "Dark mode"} className="grid size-10 place-items-center rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
                 {dark ? <Sun className="size-4.5" /> : <Moon className="size-4.5" />}
               </button>
             </TooltipTrigger>
@@ -148,7 +149,7 @@ function ShellInner() {
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button onClick={logout} className="grid size-10 place-items-center rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+              <button onClick={logout} aria-label="Sign out" className="grid size-10 place-items-center rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
                 <LogOut className="size-4.5" />
               </button>
             </TooltipTrigger>

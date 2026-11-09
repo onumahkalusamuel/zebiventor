@@ -42,6 +42,10 @@ export function CompleteReturn(arg1) {
   return window['go']['main']['App']['CompleteReturn'](arg1);
 }
 
+export function CompleteReturnNoReceipt(arg1) {
+  return window['go']['main']['App']['CompleteReturnNoReceipt'](arg1);
+}
+
 export function CompleteSale(arg1) {
   return window['go']['main']['App']['CompleteSale'](arg1);
 }
@@ -68,6 +72,10 @@ export function DownloadUpdate() {
 
 export function EmailDocument(arg1, arg2, arg3) {
   return window['go']['main']['App']['EmailDocument'](arg1, arg2, arg3);
+}
+
+export function ExpectedDeliveries() {
+  return window['go']['main']['App']['ExpectedDeliveries']();
 }
 
 export function GetDiagnostics() {
@@ -158,6 +166,10 @@ export function LookupForReturn(arg1) {
   return window['go']['main']['App']['LookupForReturn'](arg1);
 }
 
+export function NoReceiptPrice(arg1) {
+  return window['go']['main']['App']['NoReceiptPrice'](arg1);
+}
+
 export function OpenDataFolder() {
   return window['go']['main']['App']['OpenDataFolder']();
 }
@@ -168,6 +180,10 @@ export function OpenDrawer(arg1) {
 
 export function OpenShift(arg1) {
   return window['go']['main']['App']['OpenShift'](arg1);
+}
+
+export function OutgoingTransfers() {
+  return window['go']['main']['App']['OutgoingTransfers']();
 }
 
 export function PaymentMethods() {
@@ -204,6 +220,10 @@ export function ReceiptPreview(arg1, arg2) {
 
 export function ReceiveAccountPayment(arg1) {
   return window['go']['main']['App']['ReceiveAccountPayment'](arg1);
+}
+
+export function ReceiveDeliveryHere(arg1, arg2) {
+  return window['go']['main']['App']['ReceiveDeliveryHere'](arg1, arg2);
 }
 
 export function ReceiveTransferHere(arg1, arg2) {
@@ -274,6 +294,10 @@ export function SearchItems(arg1) {
   return window['go']['main']['App']['SearchItems'](arg1);
 }
 
+export function SendTransferHere(arg1) {
+  return window['go']['main']['App']['SendTransferHere'](arg1);
+}
+
 export function SetHubAddress(arg1) {
   return window['go']['main']['App']['SetHubAddress'](arg1);
 }
@@ -308,4 +332,8 @@ export function TestPreview(arg1) {
 
 export function TestPrint(arg1) {
   return window['go']['main']['App']['TestPrint'](arg1);
+}
+
+export function TillLocations() {
+  return window['go']['main']['App']['TillLocations']();
 }

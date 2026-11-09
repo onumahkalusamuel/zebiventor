@@ -44,6 +44,14 @@ export const api = {
   receiveTransferHere: (id: string, r: { note: string; lines: { variant_id: string; received_qty_milli: number }[] }): Promise<void> =>
     go.ReceiveTransferHere(id, r),
 
+  tillLocations: (): Promise<T.TillLocation[]> => go.TillLocations(),
+  sendTransferHere: (input: { to_location_id: string; note: string; lines: { variant_id: string; qty_milli: number }[] }): Promise<T.StockTransfer> =>
+    go.SendTransferHere(input),
+  outgoingTransfers: (): Promise<T.StockTransfer[]> => go.OutgoingTransfers(),
+  expectedDeliveries: (): Promise<T.ExpectedDelivery[]> => go.ExpectedDeliveries(),
+  receiveDeliveryHere: (poId: string, input: { supplier_ref: string; note: string; close_po: boolean; lines: { po_line_id: string; qty_milli: number }[] }): Promise<void> =>
+    go.ReceiveDeliveryHere(poId, input),
+
   chooseFolder: (title: string): Promise<string> => go.ChooseFolder(title),
   chooseBackupFile: (): Promise<T.BackupInfo | null> => go.ChooseBackupFile(),
   inspectBackupFile: (path: string): Promise<T.BackupInfo> => go.InspectBackupFile(path),
@@ -63,6 +71,8 @@ export const api = {
 
   lookupForReturn: (receipt: string): Promise<T.ReturnableSale> => go.LookupForReturn(receipt),
   completeReturn: (input: T.ReturnInput): Promise<T.ReturnResult> => go.CompleteReturn(input),
+  completeReturnNoReceipt: (input: T.NoReceiptInput): Promise<T.ReturnResult> => go.CompleteReturnNoReceipt(input),
+  noReceiptPrice: (variantId: string): Promise<number> => go.NoReceiptPrice(variantId),
   returnPreview: (id: string, reprint: boolean): Promise<string> => go.ReturnPreview(id, reprint),
   printReturn: (id: string, reprint: boolean): Promise<void> => go.PrintReturn(id, reprint),
 

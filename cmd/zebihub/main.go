@@ -224,6 +224,7 @@ func cmdPairCode(args []string) error {
 		return err
 	}
 	fmt.Printf("Pairing code: %s  (valid until %s, single use)\n", code.Code, time.UnixMilli(code.ExpiresAt).Format("15:04"))
+	fmt.Printf("Security code: %s  (the till shows the same code when it finds this hub)\n", hub.ShortFingerprint(h.TLSFingerprint()))
 	return nil
 }
 

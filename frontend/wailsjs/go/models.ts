@@ -654,12 +654,104 @@ export namespace protocol {
 	        this.updated_at = source["updated_at"];
 	    }
 	}
+	export class GoodsReceiptLine {
+	    id: string;
+	    po_line_id: string;
+	    variant_id: string;
+	    product_name: string;
+	    variant_name: string;
+	    sku: string;
+	    qty_milli: number;
+	    unit_cost_minor: number;
+	    total_minor: number;
+	    new_price_minor?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new GoodsReceiptLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.po_line_id = source["po_line_id"];
+	        this.variant_id = source["variant_id"];
+	        this.product_name = source["product_name"];
+	        this.variant_name = source["variant_name"];
+	        this.sku = source["sku"];
+	        this.qty_milli = source["qty_milli"];
+	        this.unit_cost_minor = source["unit_cost_minor"];
+	        this.total_minor = source["total_minor"];
+	        this.new_price_minor = source["new_price_minor"];
+	    }
+	}
+	export class GoodsReceipt {
+	    id: string;
+	    grn_no: string;
+	    po_id: string;
+	    po_no: string;
+	    supplier_id: string;
+	    supplier_name: string;
+	    location_id: string;
+	    location_name: string;
+	    supplier_ref: string;
+	    note: string;
+	    received_by: string;
+	    created_at: number;
+	    total_minor: number;
+	    bill_id: string;
+	    bill_no: string;
+	    lines?: GoodsReceiptLine[];
+	
+	    static createFrom(source: any = {}) {
+	        return new GoodsReceipt(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.grn_no = source["grn_no"];
+	        this.po_id = source["po_id"];
+	        this.po_no = source["po_no"];
+	        this.supplier_id = source["supplier_id"];
+	        this.supplier_name = source["supplier_name"];
+	        this.location_id = source["location_id"];
+	        this.location_name = source["location_name"];
+	        this.supplier_ref = source["supplier_ref"];
+	        this.note = source["note"];
+	        this.received_by = source["received_by"];
+	        this.created_at = source["created_at"];
+	        this.total_minor = source["total_minor"];
+	        this.bill_id = source["bill_id"];
+	        this.bill_no = source["bill_no"];
+	        this.lines = this.convertValues(source["lines"], GoodsReceiptLine);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class HubInfo {
 	    hub_id: string;
 	    store_name: string;
 	    version: string;
 	    protocol_version: number;
 	    setup_complete: boolean;
+	    tls_fingerprint: string;
 	    rev: number;
 	    server_time: number;
 	
@@ -674,6 +766,7 @@ export namespace protocol {
 	        this.version = source["version"];
 	        this.protocol_version = source["protocol_version"];
 	        this.setup_complete = source["setup_complete"];
+	        this.tls_fingerprint = source["tls_fingerprint"];
 	        this.rev = source["rev"];
 	        this.server_time = source["server_time"];
 	    }
@@ -834,6 +927,97 @@ export namespace protocol {
 		    return a;
 		}
 	}
+	export class PurchaseOrderLine {
+	    id: string;
+	    variant_id: string;
+	    product_name: string;
+	    variant_name: string;
+	    sku: string;
+	    unit: string;
+	    qty_ordered_milli: number;
+	    qty_received_milli: number;
+	    unit_cost_minor: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PurchaseOrderLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.variant_id = source["variant_id"];
+	        this.product_name = source["product_name"];
+	        this.variant_name = source["variant_name"];
+	        this.sku = source["sku"];
+	        this.unit = source["unit"];
+	        this.qty_ordered_milli = source["qty_ordered_milli"];
+	        this.qty_received_milli = source["qty_received_milli"];
+	        this.unit_cost_minor = source["unit_cost_minor"];
+	    }
+	}
+	export class PurchaseOrder {
+	    id: string;
+	    po_no: string;
+	    supplier_id: string;
+	    supplier_name: string;
+	    location_id: string;
+	    location_name: string;
+	    status: string;
+	    expected_at: number;
+	    note: string;
+	    created_by: string;
+	    created_at: number;
+	    updated_at: number;
+	    ordered_at: number;
+	    total_minor: number;
+	    line_count: number;
+	    lines?: PurchaseOrderLine[];
+	    receipts?: GoodsReceipt[];
+	
+	    static createFrom(source: any = {}) {
+	        return new PurchaseOrder(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.po_no = source["po_no"];
+	        this.supplier_id = source["supplier_id"];
+	        this.supplier_name = source["supplier_name"];
+	        this.location_id = source["location_id"];
+	        this.location_name = source["location_name"];
+	        this.status = source["status"];
+	        this.expected_at = source["expected_at"];
+	        this.note = source["note"];
+	        this.created_by = source["created_by"];
+	        this.created_at = source["created_at"];
+	        this.updated_at = source["updated_at"];
+	        this.ordered_at = source["ordered_at"];
+	        this.total_minor = source["total_minor"];
+	        this.line_count = source["line_count"];
+	        this.lines = this.convertValues(source["lines"], PurchaseOrderLine);
+	        this.receipts = this.convertValues(source["receipts"], GoodsReceipt);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class SalePayment {
 	    id: string;
 	    method_id: string;
@@ -1242,6 +1426,67 @@ export namespace protocol {
 	        this.cost_minor = source["cost_minor"];
 	    }
 	}
+	export class StockTransfer {
+	    id: string;
+	    transfer_no: string;
+	    from_location_id: string;
+	    from_location_name: string;
+	    to_location_id: string;
+	    to_location_name: string;
+	    note: string;
+	    created_by: string;
+	    created_at: number;
+	    items_milli: number;
+	    status: string;
+	    received_by: string;
+	    received_at: number;
+	    receive_note: string;
+	    cost_minor: number;
+	    lines?: StockTransferLine[];
+	
+	    static createFrom(source: any = {}) {
+	        return new StockTransfer(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.transfer_no = source["transfer_no"];
+	        this.from_location_id = source["from_location_id"];
+	        this.from_location_name = source["from_location_name"];
+	        this.to_location_id = source["to_location_id"];
+	        this.to_location_name = source["to_location_name"];
+	        this.note = source["note"];
+	        this.created_by = source["created_by"];
+	        this.created_at = source["created_at"];
+	        this.items_milli = source["items_milli"];
+	        this.status = source["status"];
+	        this.received_by = source["received_by"];
+	        this.received_at = source["received_at"];
+	        this.receive_note = source["receive_note"];
+	        this.cost_minor = source["cost_minor"];
+	        this.lines = this.convertValues(source["lines"], StockTransferLine);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class TerminalInfo {
 	    id: string;
 	    name: string;
@@ -1253,6 +1498,7 @@ export namespace protocol {
 	    last_seen_at: number;
 	    last_ip: string;
 	    app_version: string;
+	    encrypted: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new TerminalInfo(source);
@@ -1270,6 +1516,7 @@ export namespace protocol {
 	        this.last_seen_at = source["last_seen_at"];
 	        this.last_ip = source["last_ip"];
 	        this.app_version = source["app_version"];
+	        this.encrypted = source["encrypted"];
 	    }
 	}
 	export class TransferReceipt {
@@ -1478,6 +1725,89 @@ export namespace terminal {
 	        this.price_override = source["price_override"];
 	    }
 	}
+	export class DeliveryLine {
+	    po_line_id: string;
+	    qty_milli: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeliveryLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.po_line_id = source["po_line_id"];
+	        this.qty_milli = source["qty_milli"];
+	    }
+	}
+	export class DeliveryInput {
+	    supplier_ref: string;
+	    note: string;
+	    lines: DeliveryLine[];
+	    close_po: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeliveryInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supplier_ref = source["supplier_ref"];
+	        this.note = source["note"];
+	        this.lines = this.convertValues(source["lines"], DeliveryLine);
+	        this.close_po = source["close_po"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class ExpectedDelivery {
+	    order: protocol.PurchaseOrder;
+	    received_here: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExpectedDelivery(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.order = this.convertValues(source["order"], protocol.PurchaseOrder);
+	        this.received_here = source["received_here"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class HeldSale {
 	    id: string;
 	    label: string;
@@ -1602,6 +1932,93 @@ export namespace terminal {
 	        this.pack_qty_milli = source["pack_qty_milli"];
 	    }
 	}
+	export class Location {
+	    id: string;
+	    name: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Location(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	    }
+	}
+	export class PaymentInput {
+	    method_id: string;
+	    amount_minor: number;
+	    reference: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PaymentInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.method_id = source["method_id"];
+	        this.amount_minor = source["amount_minor"];
+	        this.reference = source["reference"];
+	    }
+	}
+	export class NoReceiptLine {
+	    variant_id: string;
+	    qty_milli: number;
+	    unit_refund_minor: number;
+	    restock: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new NoReceiptLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.variant_id = source["variant_id"];
+	        this.qty_milli = source["qty_milli"];
+	        this.unit_refund_minor = source["unit_refund_minor"];
+	        this.restock = source["restock"];
+	    }
+	}
+	export class NoReceiptInput {
+	    lines: NoReceiptLine[];
+	    customer_id: string;
+	    refunds: PaymentInput[];
+	    reason: string;
+	    approval_token: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new NoReceiptInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.lines = this.convertValues(source["lines"], NoReceiptLine);
+	        this.customer_id = source["customer_id"];
+	        this.refunds = this.convertValues(source["refunds"], PaymentInput);
+	        this.reason = source["reason"];
+	        this.approval_token = source["approval_token"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class Pairing {
 	    hub_url: string;
 	    hub_id: string;
@@ -1626,22 +2043,7 @@ export namespace terminal {
 	        this.location_id = source["location_id"];
 	    }
 	}
-	export class PaymentInput {
-	    method_id: string;
-	    amount_minor: number;
-	    reference: string;
 	
-	    static createFrom(source: any = {}) {
-	        return new PaymentInput(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.method_id = source["method_id"];
-	        this.amount_minor = source["amount_minor"];
-	        this.reference = source["reference"];
-	    }
-	}
 	export class VariantDetail {
 	    id: string;
 	    product_id: string;
@@ -1931,6 +2333,40 @@ export namespace terminal {
 	        this.synced = source["synced"];
 	    }
 	}
+	export class SendTransferInput {
+	    to_location_id: string;
+	    note: string;
+	    lines: protocol.StockTransferLine[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SendTransferInput(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.to_location_id = source["to_location_id"];
+	        this.note = source["note"];
+	        this.lines = this.convertValues(source["lines"], protocol.StockTransferLine);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class StaffUser {
 	    id: string;
 	    name: string;
@@ -1967,6 +2403,8 @@ export namespace terminal {
 	    update_version: string;
 	    version_error: string;
 	    resent: number;
+	    encrypted: boolean;
+	    security_code: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -1987,6 +2425,8 @@ export namespace terminal {
 	        this.update_version = source["update_version"];
 	        this.version_error = source["version_error"];
 	        this.resent = source["resent"];
+	        this.encrypted = source["encrypted"];
+	        this.security_code = source["security_code"];
 	    }
 	}
 	export class User {

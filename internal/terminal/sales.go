@@ -277,13 +277,25 @@ func (t *Terminal) RecordSale(ctx context.Context, u User, approver *User, in Sa
 			}
 			var pm protocol.SalePayment
 			var requiresRef, active bool
-			err := tx.QueryRowContext(ctx, "SELECT id,name,kind,requires_reference,active FROM payment_methods WHERE id=?", pi.MethodID).
-				Scan(&pm.MethodID, &pm.MethodName, &pm.Kind, &requiresRef, &active)
-			if errors.Is(err, sql.ErrNoRows) || !active {
-				return saleErr("that payment method is not available")
-			}
-			if err != nil {
-				return err
+			if pi.MethodID == StoreCreditMethodID {
+				// Spending store credit: only what the customer has.
+				var bal int64
+				if err := tx.QueryRowContext(ctx, "SELECT balance_minor + "+pendingBalance+" FROM customers WHERE id=?", sale.CustomerID).Scan(&bal); err != nil || sale.CustomerID == "" {
+					return saleErr("choose the customer whose store credit is used")
+				}
+				if pi.AmountMinor > -bal {
+					return saleErr("the customer has only %s of store credit", t.Currency(ctx).FormatSymbol(max(0, -bal)))
+				}
+				pm.MethodID, pm.MethodName, pm.Kind, active = StoreCreditMethodID, StoreCreditName, protocol.PayCredit, true
+			} else {
+				err := tx.QueryRowContext(ctx, "SELECT id,name,kind,requires_reference,active FROM payment_methods WHERE id=?", pi.MethodID).
+					Scan(&pm.MethodID, &pm.MethodName, &pm.Kind, &requiresRef, &active)
+				if errors.Is(err, sql.ErrNoRows) || !active {
+					return saleErr("that payment method is not available")
+				}
+				if err != nil {
+					return err
+				}
 			}
 			if requiresRef && pi.Reference == "" {
 				return saleErr("enter the reference for the %s payment", pm.MethodName)

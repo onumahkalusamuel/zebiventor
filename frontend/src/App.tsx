@@ -1,3 +1,4 @@
+import { useLabelLinker } from "@/lib/label-linker"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Loader2, TriangleAlert } from "lucide-react"
 import { Toaster } from "@/components/ui/sonner"
@@ -37,6 +38,7 @@ function Gate() {
 }
 
 export default function App() {
+  useLabelLinker()
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>

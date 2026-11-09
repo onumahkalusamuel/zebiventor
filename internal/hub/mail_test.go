@@ -91,7 +91,7 @@ func TestSendEmail(t *testing.T) {
 		t.Fatal("bad address accepted")
 	}
 	err = h.SendEmail(ctx, SystemSession, Email{To: []string{"Tunde <tunde@lagosbooks.ng>, ops@lagosbooks.ng"}, Subject: "Purchase order PO-000001 — Zebi Books",
-		Text: "Hello Tunde,\nPlease find our order below.", HTML: doc, Attachment: "Purchase order PO-000001.html", Kind: "purchase_order", Ref: "PO-000001"})
+		Text: "Hello Tunde,\nPlease find our order below.", HTML: doc, Attachment: "Purchase order PO-000001.pdf", AttachmentData: []byte("%PDF-1.4 fake"), AttachmentType: "application/pdf", Kind: "purchase_order", Ref: "PO-000001"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestSendEmail(t *testing.T) {
 			}
 		}
 	}
-	if len(parts) != 4 || !strings.HasSuffix(parts[3], "|Purchase order PO-000001.html") {
+	if len(parts) != 4 || parts[3] != "application/pdf|Purchase order PO-000001.pdf" {
 		t.Fatalf("parts: %v", parts)
 	}
 }

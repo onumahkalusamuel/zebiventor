@@ -13,6 +13,7 @@
 package printing
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 	"time"
@@ -171,7 +172,7 @@ func FromReturn(rt *protocol.Return, settings map[string]string, cur money.Curre
 	}
 	r.Meta = [][2]string{
 		{"Refund", rt.ReturnNo},
-		{"Original receipt", rt.SaleReceiptNo},
+		{"Original receipt", cmp.Or(rt.SaleReceiptNo, "none")},
 		{"Date", time.UnixMilli(rt.CreatedAt).Format("02 Jan 2006 15:04")},
 		{"Cashier", rt.UserName},
 	}

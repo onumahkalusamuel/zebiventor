@@ -183,7 +183,7 @@ func (h *Hub) Pair(ctx context.Context, clientIP string, req protocol.PairReques
 }
 
 // AuthTerminal resolves a bearer token to an active terminal.
-func (h *Hub) AuthTerminal(ctx context.Context, token, clientIP, appVersion string) (*Terminal, error) {
+func (h *Hub) AuthTerminal(ctx context.Context, token, clientIP, appVersion string, encrypted bool) (*Terminal, error) {
 	if token == "" {
 		return nil, ErrUnauthorized
 	}
@@ -196,13 +196,13 @@ func (h *Hub) AuthTerminal(ctx context.Context, token, clientIP, appVersion stri
 	if err != nil {
 		return nil, err
 	}
-	h.touchTerminal(t.ID, clientIP, appVersion)
+	h.touchTerminal(t.ID, clientIP, appVersion, encrypted)
 	return t, nil
 }
 
 // touchTerminal records last-seen at most every 30s per terminal so that
 // frequent long-polls don't generate a write per request.
-func (h *Hub) touchTerminal(id, ip, version string) {
+func (h *Hub) touchTerminal(id, ip, version string, encrypted bool) {
 	h.seenMu.Lock()
 	last := h.seen[id]
 	if time.Since(last) < 30*time.Second {
@@ -215,8 +215,8 @@ func (h *Hub) touchTerminal(id, ip, version string) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = h.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, "UPDATE terminals SET last_seen_at=?, last_ip=?, app_version=COALESCE(NULLIF(?,''),app_version) WHERE id=?",
-				ids.NowMs(), ip, version, id)
+			_, err := tx.ExecContext(ctx, "UPDATE terminals SET last_seen_at=?, last_ip=?, app_version=COALESCE(NULLIF(?,''),app_version), encrypted=? WHERE id=?",
+				ids.NowMs(), ip, version, encrypted, id)
 			return err
 		})
 	}()
@@ -300,7 +300,7 @@ func (h *Hub) userByUsername(ctx context.Context, username string) (protocol.Syn
 
 // ListTerminals returns all paired terminals.
 func (h *Hub) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, error) {
-	rows, err := h.db.R().QueryContext(ctx, `SELECT t.id,t.name,t.location_id,COALESCE(l.name,''),t.receipt_prefix,t.active,t.paired_at,t.last_seen_at,t.last_ip,t.app_version
+	rows, err := h.db.R().QueryContext(ctx, `SELECT t.id,t.name,t.location_id,COALESCE(l.name,''),t.receipt_prefix,t.active,t.paired_at,t.last_seen_at,t.last_ip,t.app_version,t.encrypted
 		FROM terminals t LEFT JOIN locations l ON l.id=t.location_id ORDER BY t.receipt_prefix`)
 	if err != nil {
 		return nil, err
@@ -309,7 +309,7 @@ func (h *Hub) ListTerminals(ctx context.Context) ([]protocol.TerminalInfo, error
 	out := []protocol.TerminalInfo{}
 	for rows.Next() {
 		var t protocol.TerminalInfo
-		if err := rows.Scan(&t.ID, &t.Name, &t.LocationID, &t.LocationName, &t.ReceiptPrefix, &t.Active, &t.PairedAt, &t.LastSeenAt, &t.LastIP, &t.AppVersion); err != nil {
+		if err := rows.Scan(&t.ID, &t.Name, &t.LocationID, &t.LocationName, &t.ReceiptPrefix, &t.Active, &t.PairedAt, &t.LastSeenAt, &t.LastIP, &t.AppVersion, &t.Encrypted); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

@@ -43,10 +43,10 @@ back office reach it over a private network such as **Tailscale** or
 branch PC, then pair the branch till by typing the hub's private address
 (e.g. `100.64.0.5`) when joining, and pick the branch's location for it.
 
-When the internet drops, a branch keeps selling and **receiving transfers**
-(Stock → *On its way here*); both are queued on the till and
-reach the hub when the link returns. Sending a transfer, purchasing and
-reports need the link at that moment.
+When the internet drops, a branch keeps selling, **receiving transfers and
+purchase-order deliveries** (Stock → *On its way here*) and **sending stock**
+(Stock → *Send stock from here*); all are queued on the till and reach the
+hub when the link returns. Creating orders and reports need the link.
 
 A **transfer** is a record at the hub: goods leave location A when sent
 (*in transit*) and enter B when someone at B counts them in. Nothing travels
@@ -144,7 +144,15 @@ the hub's records, so they need the hub to be reachable. Selling stays offline-c
   and hub tell each other their versions, and a till on an incompatible
   version is told clearly which side to update.
 - *Email:* purchase orders, statements and payment advice can be emailed from
-  the hub's mail server (SMTP settings, password kept on the hub).
+  the hub's mail server (SMTP settings, password kept on the hub), with the
+  document as a PDF attachment.
+- *Encryption:* tills talk to the hub over TLS. The hub's certificate is
+  self-signed and pinned by each till when it pairs (a short security code
+  is shown on both screens to compare); a till refuses any other certificate.
+- *Returns without a receipt:* always need a manager, can't exceed today's
+  price, and can be refunded as store credit, spent later at any till.
+- *Reports* read daily summaries kept alongside sales, so a year of a busy
+  shop reports in milliseconds (`docs/LOADTEST.md`).
 - *Approval rules:* each manager-approval requirement (discount, price
   change, refund, paid out, no sale) can be switched off in Settings.
 
@@ -161,6 +169,7 @@ Requirements: Go 1.24+, Node 20+, Wails CLI v2.17+.
 ```sh
 wails dev                         # run the app with hot reload
 go test -race ./internal/...      # unit + end-to-end tests (5 tills, offline, reconnect)
+ZEBI_LOADTEST=1 go test ./internal/terminal -run TestLoad -v -timeout 30m   # 50k products, 1M sales
 wails build                       # desktop app for this OS
 wails build -platform windows/amd64
 ./scripts/build-windows.sh        # Windows installer (needs NSIS: brew install makensis)

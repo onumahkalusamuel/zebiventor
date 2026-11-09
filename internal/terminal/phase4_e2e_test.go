@@ -417,7 +417,14 @@ func TestHubPutBackByHand(t *testing.T) {
 	r.sw.set(r.h.Handler())
 	r.srv.CloseClientConnections()
 	waitFor(t, "till re-sends to the older hub", 10*time.Second, func() bool { return r.hubSales() == 3 && r.tm.Status().Pending == 0 })
-	// The product added after the copy is gone at the hub; the till follows the hub.
+	// The product added after the copy is gone at the hub; the till retires it.
+	waitFor(t, "till retires product the hub no longer has", 5*time.Second, func() bool {
+		it, _ := r.tm.LookupCode(r.ctx, "222")
+		return it == nil
+	})
+	if it, _ := r.tm.LookupCode(r.ctx, "111"); it == nil {
+		t.Fatal("product the hub still has was retired")
+	}
 	waitFor(t, "till re-downloads", 5*time.Second, func() bool {
 		rev := r.tm.Status().Rev
 		var hubRev int64

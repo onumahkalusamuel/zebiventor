@@ -107,7 +107,7 @@ export function Products() {
                       </TableCell>
                       <TableCell className="pr-4">
                         {canEdit && p.track_stock && (
-                          <Button
+                          <Button aria-label={`Adjust stock of ${p.name}`}
                             variant="ghost"
                             size="icon-sm"
                             title="Adjust stock"
@@ -342,7 +342,7 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
                 <MiniField label="Reorder at">
                   <Input inputMode="decimal" value={v.reorder} onChange={(e) => setV(i, { reorder: e.target.value })} disabled={!trackStock} placeholder="–" className="text-right tabular" title="Flag as low on stock at or below this quantity" />
                 </MiniField>
-                <Button
+                <Button aria-label="Remove variant"
                   variant="ghost"
                   size="icon"
                   disabled={variants.length === 1 || !!v.id}

@@ -417,19 +417,19 @@ function SellScreen() {
                       <div className="text-right font-semibold tabular">{fmt(lineGross(l.qty_milli, unitPrice(l)))}</div>
                     </div>
                     <div className="mt-2 flex items-center gap-1.5">
-                      <Button variant="outline" size="icon-sm" onClick={(e) => (e.stopPropagation(), updateLine(idx, { qty_milli: l.qty_milli - 1000 }))}>
+                      <Button aria-label={`One less ${l.item.name}`} variant="outline" size="icon-sm" onClick={(e) => (e.stopPropagation(), updateLine(idx, { qty_milli: l.qty_milli - 1000 }))}>
                         <Minus />
                       </Button>
                       <button onClick={(e) => (e.stopPropagation(), setLineEdit(l))} className="h-7 min-w-12 rounded-md border px-2 text-sm font-semibold tabular hover:bg-muted">
                         {formatQty(l.qty_milli)}
                       </button>
-                      <Button variant="outline" size="icon-sm" onClick={(e) => (e.stopPropagation(), updateLine(idx, { qty_milli: l.qty_milli + 1000 }))}>
+                      <Button aria-label={`One more ${l.item.name}`} variant="outline" size="icon-sm" onClick={(e) => (e.stopPropagation(), updateLine(idx, { qty_milli: l.qty_milli + 1000 }))}>
                         <Plus />
                       </Button>
-                      <Button
+                      <Button aria-label={`Remove ${l.item.name}`}
                         variant="ghost"
                         size="icon-sm"
-                        className="ml-auto text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                        className="ml-auto text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive"
                         onClick={(e) => (e.stopPropagation(), updateLine(idx, null))}
                       >
                         <Trash2 />

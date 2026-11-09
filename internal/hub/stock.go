@@ -109,61 +109,72 @@ func (h *Hub) TransferStock(ctx context.Context, by *Session, in TransferInput) 
 	}
 	id := ids.New()
 	return id, h.write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if !locationExists(ctx, tx, in.FromLocationID) || !locationExists(ctx, tx, in.ToLocationID) {
-			return invalid("unknown location")
-		}
-		now := ids.NowMs()
-		no, err := nextDocNo(ctx, tx, "transfer", "TR")
+		return createTransfer(ctx, tx, id, by.UserID, "", in, ids.NowMs())
+	})
+}
+
+// createTransfer records a transfer sent by userID (from the back office,
+// or queued at a till while offline) and takes the stock out of the source.
+func createTransfer(ctx context.Context, tx *sql.Tx, id, userID, terminalID string, in TransferInput, now int64) error {
+	if in.FromLocationID == in.ToLocationID {
+		return invalid("choose two different locations")
+	}
+	if len(in.Lines) == 0 {
+		return invalid("add at least one item to transfer")
+	}
+	if !locationExists(ctx, tx, in.FromLocationID) || !locationExists(ctx, tx, in.ToLocationID) {
+		return invalid("unknown location")
+	}
+	no, err := nextDocNo(ctx, tx, "transfer", "TR")
+	if err != nil {
+		return err
+	}
+	status, recvBy, recvAt := protocol.TransferInTransit, "", int64(0)
+	if in.ReceiveNow {
+		status, recvBy, recvAt = protocol.TransferReceived, userID, now
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfers(id,transfer_no,from_location_id,to_location_id,note,created_by,created_at,status,received_by,received_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?)`, id, no, in.FromLocationID, in.ToLocationID, trim(in.Note), userID, now, status, recvBy, recvAt); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, l := range in.Lines {
+		v, err := loadVariant(ctx, tx, l.VariantID)
 		if err != nil {
 			return err
 		}
-		status, recvBy, recvAt := protocol.TransferInTransit, "", int64(0)
-		if in.ReceiveNow {
-			status, recvBy, recvAt = protocol.TransferReceived, by.UserID, now
+		if !v.TrackStock {
+			return invalid("%s does not track stock", v.label())
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfers(id,transfer_no,from_location_id,to_location_id,note,created_by,created_at,status,received_by,received_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?)`, id, no, in.FromLocationID, in.ToLocationID, trim(in.Note), by.UserID, now, status, recvBy, recvAt); err != nil {
+		if seen[v.ID] {
+			return invalid("%s is listed twice", v.label())
+		}
+		seen[v.ID] = true
+		if err := v.checkQty(l.QtyMilli); err != nil {
 			return err
 		}
-		seen := map[string]bool{}
-		for _, l := range in.Lines {
-			v, err := loadVariant(ctx, tx, l.VariantID)
-			if err != nil {
-				return err
-			}
-			if !v.TrackStock {
-				return invalid("%s does not track stock", v.label())
-			}
-			if seen[v.ID] {
-				return invalid("%s is listed twice", v.label())
-			}
-			seen[v.ID] = true
-			if err := v.checkQty(l.QtyMilli); err != nil {
-				return err
-			}
-			received := int64(0)
-			if in.ReceiveNow {
-				received = l.QtyMilli
-			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfer_lines(id,transfer_id,variant_id,qty_milli,received_qty_milli) VALUES(?,?,?,?,?)`,
-				ids.New(), id, v.ID, l.QtyMilli, received); err != nil {
-				return err
-			}
-			move := stockMove{VariantID: v.ID, LocationID: in.FromLocationID, DeltaMilli: -l.QtyMilli, Reason: "transfer_out",
-				RefType: "transfer", RefID: id, UserID: by.UserID, CreatedAt: now}
+		received := int64(0)
+		if in.ReceiveNow {
+			received = l.QtyMilli
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfer_lines(id,transfer_id,variant_id,qty_milli,received_qty_milli) VALUES(?,?,?,?,?)`,
+			ids.New(), id, v.ID, l.QtyMilli, received); err != nil {
+			return err
+		}
+		move := stockMove{VariantID: v.ID, LocationID: in.FromLocationID, DeltaMilli: -l.QtyMilli, Reason: "transfer_out",
+			RefType: "transfer", RefID: id, UserID: userID, CreatedAt: now}
+		if err := addStock(ctx, tx, move); err != nil {
+			return err
+		}
+		if in.ReceiveNow {
+			move.LocationID, move.DeltaMilli, move.Reason = in.ToLocationID, l.QtyMilli, "transfer_in"
 			if err := addStock(ctx, tx, move); err != nil {
 				return err
 			}
-			if in.ReceiveNow {
-				move.LocationID, move.DeltaMilli, move.Reason = in.ToLocationID, l.QtyMilli, "transfer_in"
-				if err := addStock(ctx, tx, move); err != nil {
-					return err
-				}
-			}
 		}
-		audit(ctx, tx, by.UserID, "", "stock.transfer", "stock_transfer", id, map[string]any{"no": no, "lines": len(in.Lines), "status": status})
-		return recordChange(ctx, tx, protocol.EntityTransfer, id)
-	})
+	}
+	audit(ctx, tx, userID, terminalID, "stock.transfer", "stock_transfer", id, map[string]any{"no": no, "lines": len(in.Lines), "status": status})
+	return recordChange(ctx, tx, protocol.EntityTransfer, id)
 }
 
 // ReceiveTransfer books an in-transit transfer in at its destination. Any
@@ -262,13 +273,8 @@ func applyTransferIn(ctx context.Context, tx *sql.Tx, term *Terminal, op protoco
 	if t.ToLocationID != term.LocationID {
 		return invalid("%s is going to %s, not this till's location", t.TransferNo, t.ToLocationName)
 	}
-	var role string
-	var active bool
-	if err := tx.QueryRowContext(ctx, "SELECT role,active FROM users WHERE id=?", in.UserID).Scan(&role, &active); err != nil || !active {
-		return invalid("the person who received %s is not a current user", t.TransferNo)
-	}
-	if !slices.Contains(catalogRoles, role) {
-		return invalid("receiving stock needs a manager or stock keeper")
+	if err := checkTillUser(ctx, tx, in.UserID); err != nil {
+		return err
 	}
 	at := in.ReceivedAt
 	if at <= 0 || at > ids.NowMs()+24*3600*1000 {
@@ -778,4 +784,41 @@ func (h *Hub) StockMovements(ctx context.Context, by *Session, variantID, locati
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// checkTillUser: stock work queued at a till must be by a current manager
+// or stock keeper.
+func checkTillUser(ctx context.Context, tx *sql.Tx, userID string) error {
+	var role string
+	var active bool
+	if err := tx.QueryRowContext(ctx, "SELECT role,active FROM users WHERE id=?", userID).Scan(&role, &active); err != nil || !active {
+		return invalid("the person who did this is not a current user")
+	}
+	if !slices.Contains(catalogRoles, role) {
+		return invalid("this needs a manager or stock keeper")
+	}
+	return nil
+}
+
+// applyTransferOut records a transfer sent from a till, possibly offline.
+// It always leaves from the till's own location.
+func applyTransferOut(ctx context.Context, tx *sql.Tx, term *Terminal, op protocol.Op) error {
+	var in protocol.TransferSendOp
+	if err := json.Unmarshal(op.Payload, &in); err != nil || in.ID == "" {
+		return invalid("bad transfer payload")
+	}
+	if err := checkTillUser(ctx, tx, in.UserID); err != nil {
+		return err
+	}
+	var exists int
+	tx.QueryRowContext(ctx, "SELECT count(*) FROM stock_transfers WHERE id=?", in.ID).Scan(&exists)
+	if exists > 0 {
+		return nil
+	}
+	at := in.SentAt
+	if at <= 0 || at > ids.NowMs()+24*3600*1000 {
+		at = ids.NowMs()
+	}
+	return createTransfer(ctx, tx, in.ID, in.UserID, term.ID, TransferInput{FromLocationID: term.LocationID, ToLocationID: in.ToLocationID,
+		Note: in.Note, Lines: in.Lines}, at)
 }

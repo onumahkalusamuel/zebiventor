@@ -408,7 +408,7 @@ function OrderEditor({ order, onClose, onNewSupplier }: { order: PurchaseOrder |
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" className="size-10 shrink-0" title="New supplier" onClick={onNewSupplier}>
+              <Button aria-label="New supplier" variant="outline" size="icon" className="size-10 shrink-0" title="New supplier" onClick={onNewSupplier}>
                 <Plus />
               </Button>
             </div>
@@ -459,7 +459,7 @@ function OrderEditor({ order, onClose, onNewSupplier }: { order: PurchaseOrder |
                     </TableCell>
                     <TableCell className="text-right tabular">{isNaN(parsed[i].qty) || isNaN(parsed[i].cost) ? "–" : fmt(Math.round((parsed[i].qty * parsed[i].cost) / 1000))}</TableCell>
                     <TableCell className="pr-3">
-                      <Button variant="ghost" size="icon-sm" onClick={() => setLines((ls) => ls!.filter((_, j) => j !== i))}>
+                      <Button aria-label="Remove line" variant="ghost" size="icon-sm" onClick={() => setLines((ls) => ls!.filter((_, j) => j !== i))}>
                         <Trash2 />
                       </Button>
                     </TableCell>
@@ -641,7 +641,7 @@ function ReceiveDialog({ order, onClose }: { order: PurchaseOrder | null; onClos
                     </TableCell>
                     {!order && (
                       <TableCell className="pr-3">
-                        <Button variant="ghost" size="icon-sm" onClick={() => setLines((ls) => ls!.filter((_, j) => j !== i))}>
+                        <Button aria-label="Remove line" variant="ghost" size="icon-sm" onClick={() => setLines((ls) => ls!.filter((_, j) => j !== i))}>
                           <Trash2 />
                         </Button>
                       </TableCell>

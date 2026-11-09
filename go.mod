@@ -3,6 +3,7 @@ module github.com/onumahkalusamuel/zebiventor
 go 1.26.0
 
 require (
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/kardianos/service v1.3.0
 	github.com/oklog/ulid/v2 v2.1.2

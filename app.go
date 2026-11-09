@@ -885,6 +885,30 @@ func (a *App) CompleteReturn(in terminal.ReturnInput) (ReturnResult, error) {
 		return ReturnResult{}, err
 	}
 	a.consumeApproval(in.ApprovalToken)
+	return a.finishReturn(r), nil
+}
+
+// CompleteReturnNoReceipt takes goods back without a receipt (always needs
+// a manager) and prints the refund slip.
+func (a *App) CompleteReturnNoReceipt(in terminal.NoReceiptInput) (ReturnResult, error) {
+	u, err := a.currentUser()
+	if err != nil {
+		return ReturnResult{}, err
+	}
+	r, err := a.term.RecordReturnNoReceipt(a.ctx, u, a.takeApproval(in.ApprovalToken), in)
+	if err != nil {
+		return ReturnResult{}, err
+	}
+	a.consumeApproval(in.ApprovalToken)
+	return a.finishReturn(r), nil
+}
+
+// NoReceiptPrice is today's refund price for an item (tax included).
+func (a *App) NoReceiptPrice(variantID string) (int64, error) {
+	return a.term.NoReceiptPrice(a.ctx, variantID)
+}
+
+func (a *App) finishReturn(r *protocol.Return) ReturnResult {
 	res := ReturnResult{Return: r}
 	pc := a.GetPrinterConfig()
 	cashOut := false
@@ -900,7 +924,7 @@ func (a *App) CompleteReturn(in terminal.ReturnInput) (ReturnResult, error) {
 			res.Printed = true
 		}
 	}
-	return res, nil
+	return res
 }
 
 // ReturnPreview renders a refund slip.

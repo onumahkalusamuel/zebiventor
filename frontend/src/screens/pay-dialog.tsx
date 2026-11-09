@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input"
 import { api, errorMessage } from "@/lib/api"
 import { parseMoney } from "@/lib/format"
 import { useMoney } from "@/lib/state"
-import type { Customer, PaymentMethod, SaleResult } from "@/lib/types"
+import { STORE_CREDIT, type Customer, type PaymentMethod, type SaleResult } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { unitPrice, type CartLine } from "./sell"
 
@@ -68,6 +68,15 @@ export function PayDialog({
     }
   }, [open])
 
+  // A customer with store credit (a balance below zero) can spend it.
+  const credit = customer && customer.balance_minor < 0 ? -customer.balance_minor : 0
+  const allMethods: PaymentMethod[] = [
+    ...(credit > 0
+      ? [{ id: STORE_CREDIT, name: `Store credit (${fmt(credit)})`, kind: "credit", requires_reference: false, opens_drawer: false, sort_order: 0, active: true } as PaymentMethod]
+      : []),
+    ...(methods.data ?? []),
+  ]
+
   const parsed = tenders.map((t) => ({ ...t, minor: parseMoney(t.amount, currency) }))
   const paid = parsed.reduce((s, t) => s + (isNaN(t.minor) ? 0 : t.minor), 0)
   const cash = parsed.filter((t) => t.method.kind === "cash").reduce((s, t) => s + (isNaN(t.minor) ? 0 : t.minor), 0)
@@ -85,7 +94,8 @@ export function PayDialog({
       onNeedCustomer()
       return
     }
-    const amount = remaining > 0 ? (remaining / 10 ** currency.digits).toFixed(currency.digits) : ""
+    const want = m.id === STORE_CREDIT ? Math.min(remaining, credit) : remaining
+    const amount = want > 0 ? (want / 10 ** currency.digits).toFixed(currency.digits) : ""
     setTenders((ts) => [...ts, { key: ++keyRef.current, method: m, amount, reference: "" }])
     setTimeout(() => {
       const inputs = document.querySelectorAll<HTMLInputElement>("[data-tender-amount]")
@@ -170,7 +180,7 @@ export function PayDialog({
                 <DialogDescription>Choose how the customer is paying. Split across several methods if needed.</DialogDescription>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                {(methods.data ?? []).map((m) => {
+                {allMethods.map((m) => {
                   const Icon = kindIcon[m.kind] ?? Wallet
                   return (
                     <button
@@ -197,6 +207,7 @@ export function PayDialog({
                         </div>
                         <Input
                           data-tender-amount
+                          aria-label={`${t.method.name} amount`}
                           inputMode="decimal"
                           value={t.amount}
                           onChange={(e) => setTenders((ts) => ts.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))}
@@ -212,7 +223,7 @@ export function PayDialog({
                             className={cn("h-10 flex-1", t.method.requires_reference && !t.reference.trim() && "border-amber-500/60")}
                           />
                         )}
-                        <Button variant="ghost" size="icon" className="ml-auto" onClick={() => setTenders((ts) => ts.filter((_, j) => j !== i))}>
+                        <Button variant="ghost" size="icon" className="ml-auto" aria-label={`Remove ${t.method.name} payment`} onClick={() => setTenders((ts) => ts.filter((_, j) => j !== i))}>
                           <X />
                         </Button>
                       </div>

@@ -162,6 +162,26 @@ type TransferReceipt struct {
 	Lines []StockTransferLine `json:"lines"`
 }
 
+// TransferSendOp is a transfer sent from a till (queued offline); it leaves
+// from the till's location. The hub numbers it when it arrives.
+type TransferSendOp struct {
+	ID           string              `json:"id"`
+	ToLocationID string              `json:"to_location_id"`
+	Note         string              `json:"note"`
+	Lines        []StockTransferLine `json:"lines"`
+	UserID       string              `json:"user_id"`
+	SentAt       int64               `json:"sent_at"`
+}
+
+// GoodsReceiveOp is a purchase order delivery received at a till (queued
+// offline), into the till's location.
+type GoodsReceiveOp struct {
+	ID         string `json:"id"`
+	UserID     string `json:"user_id"`
+	ReceivedAt int64  `json:"received_at"`
+	GoodsReceiptInput
+}
+
 // TransferReceiveOp is a transfer received at a till (queued offline).
 type TransferReceiveOp struct {
 	TransferID string `json:"transfer_id"`

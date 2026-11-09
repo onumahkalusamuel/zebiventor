@@ -29,6 +29,7 @@ const (
 	hdrEpoch      = "X-Zebi-Epoch"
 	hdrUpdate     = "X-Zebi-Update"
 	hdrRev        = "X-Zebi-Rev"
+	hdrTLS        = "X-Zebi-TLS"
 )
 
 // Platform is this build's GOOS/GOARCH, as update packages name it.
@@ -61,6 +62,11 @@ func (t *Terminal) onHubHeaders(h http.Header) {
 	if e := h.Get(hdrEpoch); e != "" {
 		t.mu.Lock()
 		t.hubEpoch = e
+		t.mu.Unlock()
+	}
+	if fp := h.Get(hdrTLS); fp != "" {
+		t.mu.Lock()
+		t.hubTLS = fp
 		t.mu.Unlock()
 	}
 	if r := h.Get(hdrRev); r != "" {
@@ -112,6 +118,9 @@ func (t *Terminal) hubRestored(ctx context.Context) bool {
 		}
 		resent, _ = res.RowsAffected()
 		if err := setKV(ctx, tx, "last_rev", "0"); err != nil {
+			return err
+		}
+		if err := startResync(ctx, tx); err != nil {
 			return err
 		}
 		return setKV(ctx, tx, "hub_epoch", seen)
@@ -177,7 +186,7 @@ func (t *Terminal) DownloadUpdate(ctx context.Context, dir string, progress func
 	}
 	req.Header.Set("Authorization", "Bearer "+p.token)
 	t.requestHeaders(req.Header)
-	resp, err := (&http.Client{Timeout: time.Hour}).Do(req)
+	resp, err := (&http.Client{Transport: t.client.http.Transport, Timeout: time.Hour}).Do(req)
 	if err != nil {
 		return "", nil, ErrNeedsHub
 	}
@@ -251,7 +260,7 @@ func (t *Terminal) AdminUpload(ctx context.Context, path string, body io.Reader,
 	req.Header.Set("Authorization", "Bearer "+p.token)
 	req.Header.Set("X-Session", sess)
 	t.requestHeaders(req.Header)
-	resp, err := (&http.Client{}).Do(req)
+	resp, err := (&http.Client{Transport: t.client.http.Transport}).Do(req)
 	if err != nil {
 		return ErrNeedsHub
 	}

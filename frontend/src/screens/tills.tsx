@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { KeyRound, Loader2, MonitorSmartphone, ShieldOff, TriangleAlert } from "lucide-react"
+import { KeyRound, Loader2, Lock, MonitorSmartphone, ShieldOff, TriangleAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Page, PageHeader } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
@@ -11,7 +11,8 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, errorMessage } from "@/lib/api"
 import { can, compareVersions, timeAgo } from "@/lib/format"
-import { useLoadedState } from "@/lib/state"
+import { useAppState, useLoadedState } from "@/lib/state"
+import { Switch } from "@/components/ui/switch"
 import type { PairingCode, TerminalInfo } from "@/lib/types"
 
 export function Tills() {
@@ -33,7 +34,8 @@ export function Tills() {
           </Button>
         }
       />
-      <div className="px-8 pb-8">
+      <div className="space-y-4 px-8 pb-8">
+        {isAdmin && terminals.data && <EncryptionPanel tills={terminals.data} />}
         {terminals.error ? (
           <div className="flex items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
             <TriangleAlert className="size-5 text-amber-600" />
@@ -79,6 +81,11 @@ export function Tills() {
                       <TableCell className="text-muted-foreground tabular">{t.last_ip}</TableCell>
                       <TableCell className="tabular">
                         {t.app_version || "—"}
+                        {t.active && !t.encrypted && t.last_seen_at > 0 && (
+                          <Badge variant="outline" className="ml-2 border-amber-500/50 text-amber-700 dark:text-amber-400">
+                            Not encrypted
+                          </Badge>
+                        )}
                         {t.active && state.status.hub_version && t.app_version && compareVersions(t.app_version, state.status.hub_version) < 0 && (
                           <Badge variant="outline" className="ml-2 border-amber-500/50 text-amber-700 dark:text-amber-400" title={`The hub is on ${state.status.hub_version}`}>
                             Older than hub
@@ -211,10 +218,53 @@ function PairDialog({ onClose }: { onClose: () => void }) {
             <div className="rounded-lg bg-muted p-3 text-left text-sm">
               <div className="text-xs text-muted-foreground">If the new till doesn’t find the hub automatically, enter:</div>
               <div className="mt-1 font-medium tabular">{hubUrl}</div>
+              {state.status.security_code && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Security code <b className="text-foreground tabular">{state.status.security_code}</b>: the new till shows the same code when it finds this hub.
+                </div>
+              )}
             </div>
           </div>
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** Encryption of till ↔ hub traffic, and the switch to refuse plain connections. */
+function EncryptionPanel({ tills }: { tills: TerminalInfo[] }) {
+  const state = useLoadedState()
+  const { refresh } = useAppState()
+  const [busy, setBusy] = useState(false)
+  const required = state.settings.require_encryption === "1"
+  const plain = tills.filter((t) => t.active && !t.encrypted && t.last_seen_at > 0)
+  async function toggle(on: boolean) {
+    setBusy(true)
+    try {
+      await api.saveStoreSettings({ require_encryption: on ? "1" : "0" })
+      toast.success(on ? "The hub now refuses unencrypted connections" : "Unencrypted connections allowed again")
+      setTimeout(refresh, 800)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="flex items-center gap-4 rounded-xl border bg-card p-4">
+      <Lock className="size-5 shrink-0 text-muted-foreground" />
+      <div className="flex-1 text-sm">
+        <div className="font-medium">Encrypted connections{state.status.security_code && <span className="font-normal text-muted-foreground"> · security code {state.status.security_code}</span>}</div>
+        <div className="text-muted-foreground">
+          {plain.length
+            ? `${plain.map((t) => t.name).join(", ")} ${plain.length === 1 ? "is" : "are"} still connecting without encryption (an older app version). Update ${plain.length === 1 ? "it" : "them"} before refusing unencrypted connections.`
+            : "Every till talks to the hub over an encrypted connection."}
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        Refuse unencrypted
+        <Switch checked={required} disabled={busy || (!required && plain.length > 0)} onCheckedChange={toggle} aria-label="Refuse unencrypted connections" />
+      </label>
+    </section>
   )
 }

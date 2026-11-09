@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, ArrowRightLeft, ClipboardCheck, History, Loader2, MapPin, PackageCheck, Plus, Search, Trash2, Warehouse, X } from "lucide-react"
 import { toast } from "sonner"
-import { ArrivingHere } from "@/components/arriving"
+import { ArrivingHere, SendStockButton } from "@/components/arriving"
 import { Chips, ExportButton, HubRequired, ItemPicker, LocationSelect, PrintButton, QueryError, itemLabel, useLocations } from "@/components/backoffice"
 import { EmptyState, Page, PageHeader, StatCard } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
@@ -27,7 +27,7 @@ export function Stock() {
   const [tab, setTab] = useState<Tab>("levels")
   return (
     <Page>
-      <PageHeader title="Stock" description="What you hold, where, and what it's worth. Counts and transfers update every till within seconds." />
+      <PageHeader title="Stock" description="What you hold, where, and what it's worth. Counts and transfers update every till within seconds." actions={<SendStockButton />} />
       <ArrivingHere />
       <HubRequired>
         <div className="space-y-4 px-8 pb-8">
@@ -526,7 +526,7 @@ function CountScreen({ id, onBack }: { id: string; onBack: () => void }) {
                   <TableCell className="pr-4 text-right">
                     {open && (
                       <>
-                        <Button
+                        <Button aria-label="Change count"
                           variant="ghost"
                           size="icon-sm"
                           title="Change count"
@@ -537,7 +537,7 @@ function CountScreen({ id, onBack }: { id: string; onBack: () => void }) {
                         >
                           <span className="text-xs">✎</span>
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title="Remove" onClick={() => entry(l.variant_id, 0, "remove")}>
+                        <Button aria-label="Remove from count" variant="ghost" size="icon-sm" title="Remove" onClick={() => entry(l.variant_id, 0, "remove")}>
                           <X />
                         </Button>
                       </>
@@ -988,7 +988,7 @@ function TransferDialog({ locations, onClose, onCreated }: { locations: Location
                     <Input value={l.qty} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))} className={cn("h-9 text-right tabular", isNaN(parsed[i]) && "border-destructive")} />
                   </TableCell>
                   <TableCell className="w-10 pr-3">
-                    <Button variant="ghost" size="icon-sm" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
+                    <Button aria-label="Remove line" variant="ghost" size="icon-sm" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}>
                       <Trash2 />
                     </Button>
                   </TableCell>

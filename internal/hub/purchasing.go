@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/ids"
@@ -132,22 +133,9 @@ func (h *Hub) GetPurchaseOrder(ctx context.Context, by *Session, id string) (*pr
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.QueryContext(ctx, `SELECT l.id,l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),COALESCE(p.unit,'pc'),
-		l.qty_ordered_milli,l.qty_received_milli,l.unit_cost_minor
-		FROM purchase_order_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id
-		WHERE l.po_id=? ORDER BY l.line_no`, o.ID)
-	if err != nil {
+	if o.Lines, err = poLines(ctx, r, o.ID); err != nil {
 		return nil, err
 	}
-	for rows.Next() {
-		var l protocol.PurchaseOrderLine
-		if err := rows.Scan(&l.ID, &l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.Unit, &l.QtyOrderedMilli, &l.QtyReceivedMilli, &l.UnitCostMinor); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		o.Lines = append(o.Lines, l)
-	}
-	rows.Close()
 	o.Receipts, err = h.listReceipts(ctx, "g.po_id=?", o.ID)
 	return &o, err
 }
@@ -231,7 +219,7 @@ func (h *Hub) SavePurchaseOrder(ctx context.Context, by *Session, in protocol.Pu
 			}
 		}
 		audit(ctx, tx, by.UserID, "", "po.save", "purchase_order", id, map[string]any{"status": status, "lines": len(in.Lines)})
-		return nil
+		return recordChange(ctx, tx, protocol.EntityPurchaseOrder, id)
 	})
 	return id, err
 }
@@ -271,7 +259,7 @@ func (h *Hub) SetPurchaseOrderStatus(ctx context.Context, by *Session, id, statu
 			return invalid("an order that is %s cannot be marked %s", cur, status)
 		}
 		audit(ctx, tx, by.UserID, "", "po.status", "purchase_order", id, map[string]any{"from": cur, "to": status})
-		return nil
+		return recordChange(ctx, tx, protocol.EntityPurchaseOrder, id)
 	})
 }
 
@@ -358,106 +346,114 @@ func (h *Hub) ReceiveGoods(ctx context.Context, by *Session, in protocol.GoodsRe
 	}
 	id := ids.New()
 	err := h.write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		now := ids.NowMs()
-		supplier, loc := in.SupplierID, in.LocationID
-		poLines := map[string]string{} // po line id -> variant id
-		if in.POID != "" {
-			var status string
-			if err := tx.QueryRowContext(ctx, "SELECT supplier_id, location_id, status FROM purchase_orders WHERE id=?", in.POID).Scan(&supplier, &loc, &status); err != nil {
-				return invalid("purchase order not found")
-			}
-			if status != protocol.POOrdered && status != protocol.POPartial {
-				return invalid("this order is %s; only ordered goods can be received", status)
-			}
-			if in.LocationID != "" {
-				loc = in.LocationID
-			}
-			rows, err := tx.QueryContext(ctx, "SELECT id, variant_id FROM purchase_order_lines WHERE po_id=?", in.POID)
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var lid, vid string
-				rows.Scan(&lid, &vid)
-				poLines[lid] = vid
-			}
-			rows.Close()
+		return h.receiveGoods(ctx, tx, id, by.UserID, "", in, lines, ids.NowMs())
+	})
+	return id, err
+}
+
+// receiveGoods books a delivery in (from the back office, or queued at a
+// till while offline): stock, weighted-average cost and the order's progress.
+func (h *Hub) receiveGoods(ctx context.Context, tx *sql.Tx, id, userID, terminalID string, in protocol.GoodsReceiptInput, lines []protocol.GoodsReceiptLine, now int64) error {
+	supplier, loc := in.SupplierID, in.LocationID
+	poLines := map[string]string{} // po line id -> variant id
+	if in.POID != "" {
+		var status string
+		if err := tx.QueryRowContext(ctx, "SELECT supplier_id, location_id, status FROM purchase_orders WHERE id=?", in.POID).Scan(&supplier, &loc, &status); err != nil {
+			return invalid("purchase order not found")
 		}
-		if supplier != "" {
-			var n int
-			tx.QueryRowContext(ctx, "SELECT count(*) FROM suppliers WHERE id=?", supplier).Scan(&n)
-			if n == 0 {
-				return invalid("unknown supplier")
-			}
+		if status != protocol.POOrdered && status != protocol.POPartial {
+			return invalid("this order is %s; only ordered goods can be received", status)
 		}
-		if loc == "" {
-			loc = defaultLocation(ctx, tx)
+		if in.LocationID != "" {
+			loc = in.LocationID
 		}
-		if !locationExists(ctx, tx, loc) {
-			return invalid("unknown location")
-		}
-		no, err := nextDocNo(ctx, tx, "grn", "GRN")
+		rows, err := tx.QueryContext(ctx, "SELECT id, variant_id FROM purchase_order_lines WHERE po_id=?", in.POID)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO goods_receipts(id,grn_no,po_id,supplier_id,location_id,supplier_ref,note,received_by,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?)`, id, no, in.POID, supplier, loc, trim(in.SupplierRef), trim(in.Note), by.UserID, now); err != nil {
+		for rows.Next() {
+			var lid, vid string
+			rows.Scan(&lid, &vid)
+			poLines[lid] = vid
+		}
+		rows.Close()
+	}
+	if supplier != "" {
+		var n int
+		tx.QueryRowContext(ctx, "SELECT count(*) FROM suppliers WHERE id=?", supplier).Scan(&n)
+		if n == 0 {
+			return invalid("unknown supplier")
+		}
+	}
+	if loc == "" {
+		loc = defaultLocation(ctx, tx)
+	}
+	if !locationExists(ctx, tx, loc) {
+		return invalid("unknown location")
+	}
+	no, err := nextDocNo(ctx, tx, "grn", "GRN")
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO goods_receipts(id,grn_no,po_id,supplier_id,location_id,supplier_ref,note,received_by,created_at)
+		VALUES(?,?,?,?,?,?,?,?,?)`, id, no, in.POID, supplier, loc, trim(in.SupplierRef), trim(in.Note), userID, now); err != nil {
+		return err
+	}
+	var total int64
+	for _, l := range lines {
+		v, err := loadVariant(ctx, tx, l.VariantID)
+		if err != nil {
 			return err
 		}
-		var total int64
-		for _, l := range lines {
-			v, err := loadVariant(ctx, tx, l.VariantID)
-			if err != nil {
-				return err
-			}
-			if err := v.checkQty(l.QtyMilli); err != nil {
-				return err
-			}
-			if l.UnitCostMinor < 0 || l.NewPriceMinor < 0 {
-				return invalid("costs and prices cannot be negative")
-			}
-			if l.POLineID != "" {
-				if poLines[l.POLineID] != v.ID {
-					return invalid("%s is not on this order", v.label())
-				}
-				if _, err := tx.ExecContext(ctx, "UPDATE purchase_order_lines SET qty_received_milli=qty_received_milli+? WHERE id=?", l.QtyMilli, l.POLineID); err != nil {
-					return err
-				}
-			}
-			lineTotal := mulDiv(l.QtyMilli, l.UnitCostMinor, 1000)
-			total += lineTotal
-			if _, err := tx.ExecContext(ctx, `INSERT INTO goods_receipt_lines(id,grn_id,po_line_id,variant_id,qty_milli,unit_cost_minor,total_minor) VALUES(?,?,?,?,?,?,?)`,
-				ids.New(), id, l.POLineID, v.ID, l.QtyMilli, l.UnitCostMinor, lineTotal); err != nil {
-				return err
-			}
-			if err := h.receiveCost(ctx, tx, v, l.QtyMilli, l.UnitCostMinor, l.NewPriceMinor, now); err != nil {
-				return err
-			}
-			if v.TrackStock {
-				if err := addStock(ctx, tx, stockMove{VariantID: v.ID, LocationID: loc, DeltaMilli: l.QtyMilli, Reason: "receipt",
-					RefType: "receipt", RefID: id, UserID: by.UserID, CreatedAt: now}); err != nil {
-					return err
-				}
-			}
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE goods_receipts SET total_minor=? WHERE id=?", total, id); err != nil {
+		if err := v.checkQty(l.QtyMilli); err != nil {
 			return err
 		}
-		if in.POID != "" {
-			var short int
-			tx.QueryRowContext(ctx, "SELECT count(*) FROM purchase_order_lines WHERE po_id=? AND qty_received_milli < qty_ordered_milli", in.POID).Scan(&short)
-			status := protocol.POPartial
-			if short == 0 || in.ClosePO {
-				status = protocol.POReceived
+		if l.UnitCostMinor < 0 || l.NewPriceMinor < 0 {
+			return invalid("costs and prices cannot be negative")
+		}
+		if l.POLineID != "" {
+			if poLines[l.POLineID] != v.ID {
+				return invalid("%s is not on this order", v.label())
 			}
-			if _, err := tx.ExecContext(ctx, "UPDATE purchase_orders SET status=?, updated_at=? WHERE id=?", status, now, in.POID); err != nil {
+			if _, err := tx.ExecContext(ctx, "UPDATE purchase_order_lines SET qty_received_milli=qty_received_milli+? WHERE id=?", l.QtyMilli, l.POLineID); err != nil {
 				return err
 			}
 		}
-		audit(ctx, tx, by.UserID, "", "goods.received", "goods_receipt", id, map[string]any{"grn": no, "po_id": in.POID, "total": total, "lines": len(lines)})
-		return nil
-	})
-	return id, err
+		lineTotal := mulDiv(l.QtyMilli, l.UnitCostMinor, 1000)
+		total += lineTotal
+		if _, err := tx.ExecContext(ctx, `INSERT INTO goods_receipt_lines(id,grn_id,po_line_id,variant_id,qty_milli,unit_cost_minor,total_minor) VALUES(?,?,?,?,?,?,?)`,
+			ids.New(), id, l.POLineID, v.ID, l.QtyMilli, l.UnitCostMinor, lineTotal); err != nil {
+			return err
+		}
+		if err := h.receiveCost(ctx, tx, v, l.QtyMilli, l.UnitCostMinor, l.NewPriceMinor, now); err != nil {
+			return err
+		}
+		if v.TrackStock {
+			if err := addStock(ctx, tx, stockMove{VariantID: v.ID, LocationID: loc, DeltaMilli: l.QtyMilli, Reason: "receipt",
+				RefType: "receipt", RefID: id, UserID: userID, CreatedAt: now}); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE goods_receipts SET total_minor=? WHERE id=?", total, id); err != nil {
+		return err
+	}
+	if in.POID != "" {
+		var short int
+		tx.QueryRowContext(ctx, "SELECT count(*) FROM purchase_order_lines WHERE po_id=? AND qty_received_milli < qty_ordered_milli", in.POID).Scan(&short)
+		status := protocol.POPartial
+		if short == 0 || in.ClosePO {
+			status = protocol.POReceived
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE purchase_orders SET status=?, updated_at=? WHERE id=?", status, now, in.POID); err != nil {
+			return err
+		}
+	}
+	audit(ctx, tx, userID, terminalID, "goods.received", "goods_receipt", id, map[string]any{"grn": no, "po_id": in.POID, "total": total, "lines": len(lines)})
+	if in.POID != "" {
+		return recordChange(ctx, tx, protocol.EntityPurchaseOrder, in.POID)
+	}
+	return nil
 }
 
 // receiveCost updates an item's cost to the weighted average of the stock
@@ -481,4 +477,59 @@ func (h *Hub) receiveCost(ctx context.Context, tx *sql.Tx, v variantInfo, qty, u
 		return err
 	}
 	return recordChange(ctx, tx, protocol.EntityVariant, v.ID)
+}
+
+func poLines(ctx context.Context, q queryer, poID string) ([]protocol.PurchaseOrderLine, error) {
+	rows, err := q.QueryContext(ctx, `SELECT l.id,l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),COALESCE(p.unit,'pc'),
+		l.qty_ordered_milli,l.qty_received_milli,l.unit_cost_minor
+		FROM purchase_order_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id
+		WHERE l.po_id=? ORDER BY l.line_no`, poID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []protocol.PurchaseOrderLine
+	for rows.Next() {
+		var l protocol.PurchaseOrderLine
+		if err := rows.Scan(&l.ID, &l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.Unit, &l.QtyOrderedMilli, &l.QtyReceivedMilli, &l.UnitCostMinor); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// applyGoodsIn books in a delivery received at a till, possibly offline.
+func (h *Hub) applyGoodsIn(ctx context.Context, tx *sql.Tx, term *Terminal, op protocol.Op) error {
+	var in protocol.GoodsReceiveOp
+	if err := json.Unmarshal(op.Payload, &in); err != nil || in.ID == "" {
+		return invalid("bad delivery payload")
+	}
+	if in.POID == "" {
+		return invalid("a delivery from a till must be against a purchase order")
+	}
+	if err := checkTillUser(ctx, tx, in.UserID); err != nil {
+		return err
+	}
+	var exists int
+	tx.QueryRowContext(ctx, "SELECT count(*) FROM goods_receipts WHERE id=?", in.ID).Scan(&exists)
+	if exists > 0 {
+		return nil
+	}
+	in.LocationID = term.LocationID
+	var lines []protocol.GoodsReceiptLine
+	for _, l := range in.Lines {
+		if l.QtyMilli != 0 {
+			l.NewPriceMinor = 0 // prices are changed in the back office
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) == 0 {
+		return invalid("nothing was received")
+	}
+	at := in.ReceivedAt
+	if at <= 0 || at > ids.NowMs()+24*3600*1000 {
+		at = ids.NowMs()
+	}
+	return h.receiveGoods(ctx, tx, in.ID, in.UserID, term.ID, in.GoodsReceiptInput, lines, at)
 }

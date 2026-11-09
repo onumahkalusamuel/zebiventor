@@ -68,6 +68,7 @@ type Terminal struct {
 	session  string // hub session token for admin calls (memory only)
 	hubEpoch string // last data epoch the hub reported
 	hubRev   int64  // hub's latest change number from the last pull (-1 = unknown)
+	hubTLS   string // certificate the hub says it offers (for upgrading plain tills)
 
 	wake     chan struct{}
 	syncStop context.CancelFunc
@@ -99,11 +100,13 @@ func Open(ctx context.Context, cfg Config) (*Terminal, error) {
 		hubRev: -1,
 	}
 	t.client.headers, t.client.onResponse = t.requestHeaders, t.onHubHeaders
+	t.client.tls.set(t.kv(ctx, "hub_cert"))
 	if p, ok := t.Pairing(ctx); ok {
 		t.status.Paired = true
 		t.status.HubURL = p.HubURL
 	}
 	t.refreshCounts(ctx)
+	t.refreshTLSStatus(ctx)
 	return t, nil
 }
 
@@ -142,10 +145,11 @@ func (t *Terminal) Pairing(ctx context.Context) (Pairing, bool) {
 	return p, p.token != "" && p.HubURL != ""
 }
 
-// HubInfo fetches public info from a hub URL (used before pairing).
+// HubInfo fetches public info from a hub URL (used before pairing). Its
+// TLSFingerprint is the certificate actually seen ("" if not encrypted).
 func (t *Terminal) HubInfo(ctx context.Context, hubURL string) (protocol.HubInfo, error) {
-	var info protocol.HubInfo
-	err := t.client.do(ctx, 5*time.Second, http.MethodGet, NormalizeHubURL(hubURL)+"/api/hub/info", "", "", nil, &info)
+	_, fp, info, err := t.probe(ctx, hubURL, true)
+	info.TLSFingerprint = fp
 	return info, err
 }
 
@@ -153,11 +157,7 @@ func (t *Terminal) HubInfo(ctx context.Context, hubURL string) (protocol.HubInfo
 // Pairing a till that already belongs to a different hub is refused, since
 // it would mix two stores' data in one database.
 func (t *Terminal) Pair(ctx context.Context, hubURL, code, name string) (Pairing, error) {
-	hubURL = NormalizeHubURL(hubURL)
-	if hubURL == "" {
-		return Pairing{}, errors.New("enter the hub address")
-	}
-	info, err := t.HubInfo(ctx, hubURL)
+	hubURL, fp, info, err := t.probe(ctx, hubURL, true)
 	if err != nil {
 		return Pairing{}, err
 	}
@@ -168,15 +168,19 @@ func (t *Terminal) Pair(ctx context.Context, hubURL, code, name string) (Pairing
 		return Pairing{}, errors.New("this till already belongs to a different store; reset it before pairing elsewhere")
 	}
 	var resp protocol.PairResponse
+	prevPin, _ := t.client.tls.get()
+	t.client.tls.set(fp) // pin from here on (empty: plain)
 	err = t.client.do(ctx, 10*time.Second, http.MethodPost, hubURL+"/api/pair", "", "",
 		protocol.PairRequest{Code: strings.TrimSpace(code), TerminalName: name, AppVersion: t.cfg.Version}, &resp)
 	if err != nil {
+		t.client.tls.set(prevPin)
 		return Pairing{}, err
 	}
 	err = t.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		for k, v := range map[string]string{
 			"hub_url": hubURL, "hub_id": resp.HubID, "store_name": resp.StoreName, "terminal_id": resp.TerminalID,
 			"terminal_name": resp.TerminalName, "receipt_prefix": resp.ReceiptPrefix, "location_id": resp.LocationID, "token": resp.Token,
+			"hub_cert": fp,
 		} {
 			if err := setKV(ctx, tx, k, v); err != nil {
 				return err
@@ -188,18 +192,18 @@ func (t *Terminal) Pair(ctx context.Context, hubURL, code, name string) (Pairing
 		return Pairing{}, err
 	}
 	t.updateStatus(func(s *Status) { s.Paired, s.Revoked, s.HubURL, s.LastError = true, false, hubURL, "" })
+	t.refreshTLSStatus(ctx)
 	p, _ := t.Pairing(ctx)
 	return p, nil
 }
 
 // SetHubURL changes the hub address (e.g. after the hub PC got a new IP).
 func (t *Terminal) SetHubURL(ctx context.Context, hubURL string) error {
-	hubURL = NormalizeHubURL(hubURL)
 	p, ok := t.Pairing(ctx)
 	if !ok {
 		return errors.New("this till is not paired")
 	}
-	info, err := t.HubInfo(ctx, hubURL)
+	hubURL, _, info, err := t.probe(ctx, t.sameScheme(ctx, NormalizeHubURL(hubURL)), false)
 	if err != nil {
 		return err
 	}

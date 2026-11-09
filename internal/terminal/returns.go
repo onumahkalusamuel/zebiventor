@@ -181,23 +181,35 @@ func (t *Terminal) RecordReturn(ctx context.Context, u User, approver *User, in 
 		return nil, saleErr("choose at least one item to return")
 	}
 
-	err = t.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	return t.storeReturn(ctx, p, r, in.Refunds)
+}
+
+// storeReturn checks the refunds add up, numbers the return and queues it.
+func (t *Terminal) storeReturn(ctx context.Context, p Pairing, r *protocol.Return, refunds []PaymentInput) (*protocol.Return, error) {
+	err := t.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		now := ids.NowMs()
 		r.CreatedAt = now
 		r.Refunds = nil
 		var refunded int64
-		for _, pi := range in.Refunds {
+		for _, pi := range refunds {
 			if pi.AmountMinor <= 0 {
 				continue
 			}
 			var pm protocol.SalePayment
-			var active bool
-			err := tx.QueryRowContext(ctx, "SELECT id,name,kind,active FROM payment_methods WHERE id=?", pi.MethodID).Scan(&pm.MethodID, &pm.MethodName, &pm.Kind, &active)
-			if errors.Is(err, sql.ErrNoRows) || !active {
-				return saleErr("that refund method is not available")
-			}
-			if err != nil {
-				return err
+			if pi.MethodID == StoreCreditMethodID {
+				if r.CustomerID == "" {
+					return saleErr("choose the customer to give store credit to")
+				}
+				pm.MethodID, pm.MethodName, pm.Kind = StoreCreditMethodID, StoreCreditName, protocol.PayCredit
+			} else {
+				var active bool
+				err := tx.QueryRowContext(ctx, "SELECT id,name,kind,active FROM payment_methods WHERE id=?", pi.MethodID).Scan(&pm.MethodID, &pm.MethodName, &pm.Kind, &active)
+				if errors.Is(err, sql.ErrNoRows) || !active {
+					return saleErr("that refund method is not available")
+				}
+				if err != nil {
+					return err
+				}
 			}
 			if pm.Kind == protocol.PayCredit && r.CustomerID == "" {
 				return saleErr("this sale had no customer, so it can't be refunded to an account")
@@ -278,4 +290,116 @@ func fmtQty(milli int64) string {
 		return fmt.Sprint(milli / 1000)
 	}
 	return strings.TrimRight(fmt.Sprintf("%.3f", float64(milli)/1000), "0")
+}
+
+// Store credit: a refund kept on the customer's account (their balance goes
+// below zero) and spent on later sales. It needs no payment method set up.
+const (
+	StoreCreditMethodID = "store_credit"
+	StoreCreditName     = "Store credit"
+)
+
+// NoReceiptLine is an item brought back without a receipt.
+type NoReceiptLine struct {
+	VariantID string `json:"variant_id"`
+	QtyMilli  int64  `json:"qty_milli"`
+	// UnitRefundMinor is what is given back per unit, tax included; 0 means
+	// today's price. It can be lower than today's price, never higher.
+	UnitRefundMinor int64 `json:"unit_refund_minor"`
+	Restock         bool  `json:"restock"`
+}
+
+// NoReceiptInput is a return without a receipt.
+type NoReceiptInput struct {
+	Lines         []NoReceiptLine `json:"lines"`
+	CustomerID    string          `json:"customer_id"`
+	Refunds       []PaymentInput  `json:"refunds"`
+	Reason        string          `json:"reason"`
+	ApprovalToken string          `json:"approval_token"`
+}
+
+// NoReceiptPrice is today's refund price per unit (tax included) for an item.
+func (t *Terminal) NoReceiptPrice(ctx context.Context, variantID string) (int64, error) {
+	var price, bp int64
+	err := t.db.R().QueryRowContext(ctx, `SELECT v.price_minor, p.tax_rate_bp FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id=?`, variantID).Scan(&price, &bp)
+	if err != nil {
+		return 0, saleErr("item not found")
+	}
+	if t.Settings(ctx)["tax_mode"] == protocol.TaxExclusive {
+		price += lineTax(protocol.TaxExclusive, price, bp)
+	}
+	return price, nil
+}
+
+// RecordReturnNoReceipt takes goods back without a receipt. A manager must
+// always approve it (whatever the approval settings), and the refund can't
+// exceed today's price.
+func (t *Terminal) RecordReturnNoReceipt(ctx context.Context, u User, approver *User, in NoReceiptInput) (*protocol.Return, error) {
+	p, ok := t.Pairing(ctx)
+	if !ok {
+		return nil, errors.New("this till is not paired with a hub")
+	}
+	approved, err := approvedBy(u, approver)
+	if err != nil {
+		return nil, err
+	}
+	shiftID := t.kv(ctx, "shift_id")
+	if shiftID == "" {
+		return nil, saleErr("open a shift before giving refunds")
+	}
+	if strings.TrimSpace(in.Reason) == "" {
+		return nil, saleErr("give a reason for the return")
+	}
+	r := &protocol.Return{ID: ids.New(), TerminalID: p.TerminalID, LocationID: p.LocationID, UserID: u.ID, UserName: u.Name,
+		ApprovedBy: approved, ShiftID: shiftID, Reason: "No receipt: " + strings.TrimSpace(in.Reason)}
+	if in.CustomerID != "" {
+		err := t.db.R().QueryRowContext(ctx, "SELECT id,name FROM customers WHERE id=?", in.CustomerID).Scan(&r.CustomerID, &r.CustomerName)
+		if err != nil {
+			return nil, saleErr("customer not found")
+		}
+	}
+	mode := t.Settings(ctx)["tax_mode"]
+	seen := map[string]bool{}
+	for _, li := range in.Lines {
+		if li.QtyMilli <= 0 {
+			continue
+		}
+		if seen[li.VariantID] {
+			return nil, saleErr("an item is listed twice")
+		}
+		seen[li.VariantID] = true
+		var l protocol.ReturnLine
+		var bp int64
+		var fraction bool
+		err := t.db.R().QueryRowContext(ctx, `SELECT v.id,p.name,v.name,v.sku,p.track_stock,p.tax_rate_bp,p.allow_fraction
+			FROM variants v JOIN products p ON p.id=v.product_id WHERE v.id=?`, li.VariantID).
+			Scan(&l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.TrackStock, &bp, &fraction)
+		if err != nil {
+			return nil, saleErr("item not found")
+		}
+		if !fraction && li.QtyMilli%1000 != 0 {
+			return nil, saleErr("%s is returned in whole units", l.ProductName)
+		}
+		today, _ := t.NoReceiptPrice(ctx, li.VariantID)
+		unit := li.UnitRefundMinor
+		if unit == 0 {
+			unit = today
+		}
+		if unit < 0 || unit > today {
+			return nil, saleErr("the refund for %s can't be more than today's price", l.ProductName)
+		}
+		l.ID, l.QtyMilli, l.Restock = ids.New(), li.QtyMilli, li.Restock
+		l.TotalMinor = mulDivRound(unit, li.QtyMilli, 1000)
+		// Tax inside the refund, at the item's rate.
+		if mode == protocol.TaxInclusive || mode == protocol.TaxExclusive {
+			l.TaxMinor = lineTax(protocol.TaxInclusive, l.TotalMinor, bp)
+		}
+		r.TotalMinor += l.TotalMinor
+		r.TaxMinor += l.TaxMinor
+		r.Lines = append(r.Lines, l)
+	}
+	if len(r.Lines) == 0 {
+		return nil, saleErr("add the items being returned")
+	}
+	return t.storeReturn(ctx, p, r, in.Refunds)
 }

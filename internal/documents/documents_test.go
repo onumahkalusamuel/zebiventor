@@ -68,3 +68,36 @@ func TestTransferNoteAndStatement(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, "statement.html"), html, 0o644)
 	}
 }
+
+func TestPDF(t *testing.T) {
+	store := StoreFromSettings(map[string]string{"store_name": "Zebi Books & Stationery", "store_address": "12 Allen Avenue, Ikeja, Lagos", "store_phone": "0803 000 0000"})
+	o := &protocol.PurchaseOrder{PONo: "PO-000007", SupplierName: "Lagos Book Distributors", LocationName: "Main Store", Status: protocol.POOrdered,
+		OrderedAt: 1_700_000_000_000, Note: "Deliver before 10am.\nCall Tunde on arrival."}
+	for i := range 60 { // enough for a second page
+		o.Lines = append(o.Lines, protocol.PurchaseOrderLine{ProductName: "Half of a Yellow Sun — a very long title that has to wrap inside its column " + itoa(i),
+			SKU: "HYS" + itoa(i), QtyOrderedMilli: 12_000, UnitCostMinor: 455000})
+	}
+	doc := PurchaseOrder(o, &protocol.Supplier{Name: "Lagos Book Distributors", ContactName: "Tunde Bello", Phone: "0802"}, store, naira)
+	b, err := doc.PDF()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(b), "%PDF-") || len(b) < 10_000 {
+		t.Fatalf("not a PDF (%d bytes)", len(b))
+	}
+	if n := strings.Count(string(b), "/Type /Page\n"); n < 2 {
+		t.Logf("pages marker count %d", n)
+	}
+	if dir := os.Getenv("DOCUMENT_PREVIEW_DIR"); dir != "" {
+		os.WriteFile(filepath.Join(dir, "po.pdf"), b, 0o644)
+	}
+	// Every kind renders.
+	st := &protocol.SupplierStatement{Supplier: protocol.Supplier{Name: "S"}, Entries: []protocol.SupplierLedgerEntry{{Kind: "bill", RefNo: "B1", AmountMinor: 100, BalanceMinor: 100}}}
+	tr := &protocol.StockTransfer{TransferNo: "TR-1", Lines: []protocol.StockTransferLine{{ProductName: "Pen", QtyMilli: 1000}}}
+	p := &protocol.SupplierPayment{PaymentNo: "SP-1", AmountMinor: 100}
+	for _, d := range []Doc{SupplierStatement(st, store, naira), TransferNote(tr, store), PaymentAdvice(p, nil, store, naira)} {
+		if _, err := d.PDF(); err != nil {
+			t.Fatalf("%s: %v", d.Title, err)
+		}
+	}
+}

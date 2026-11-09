@@ -2,6 +2,7 @@ package hub
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/tls"
 	"database/sql"
@@ -43,9 +44,13 @@ type Email struct {
 	Subject    string   `json:"subject"`
 	Text       string   `json:"text"`       // the covering note
 	HTML       string   `json:"html"`       // shown as the message body under the note
-	Attachment string   `json:"attachment"` // file name for HTML as an attachment ("" = none)
-	Kind       string   `json:"kind"`       // for the activity log
-	Ref        string   `json:"ref"`
+	Attachment string   `json:"attachment"` // attachment file name ("" = none)
+	// AttachmentData is the attachment (e.g. a PDF); without it the HTML
+	// document itself is attached.
+	AttachmentData []byte `json:"attachment_data,omitempty"`
+	AttachmentType string `json:"attachment_type,omitempty"`
+	Kind           string `json:"kind"` // for the activity log
+	Ref            string `json:"ref"`
 }
 
 func (h *Hub) emailSettings(ctx context.Context) EmailSettings {
@@ -209,16 +214,20 @@ func buildMessage(cfg EmailSettings, e Email) ([]byte, error) {
 		return nil, err
 	}
 
-	if e.Attachment != "" && e.HTML != "" {
+	if e.Attachment != "" && (e.HTML != "" || len(e.AttachmentData) > 0) {
+		data, ctype := []byte(e.HTML), "text/html; charset=utf-8"
+		if len(e.AttachmentData) > 0 {
+			data, ctype = e.AttachmentData, cmp.Or(e.AttachmentType, "application/octet-stream")
+		}
 		ah := textproto.MIMEHeader{}
-		ah.Set("Content-Type", "text/html; charset=utf-8")
+		ah.Set("Content-Type", ctype)
 		ah.Set("Content-Transfer-Encoding", "base64")
 		ah.Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": e.Attachment}))
 		w, err := mixed.CreatePart(ah)
 		if err != nil {
 			return nil, err
 		}
-		enc := base64.StdEncoding.EncodeToString([]byte(e.HTML))
+		enc := base64.StdEncoding.EncodeToString(data)
 		for len(enc) > 76 {
 			w.Write([]byte(enc[:76] + "\r\n"))
 			enc = enc[76:]

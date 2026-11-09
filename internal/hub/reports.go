@@ -2,9 +2,11 @@ package hub
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
 )
@@ -60,7 +62,14 @@ func (h *Hub) SalesReport(ctx context.Context, by *Session, from, to int64, grou
 	FROM f LEFT JOIN variants v ON v.id=f.variant_id LEFT JOIN products p ON p.id=v.product_id LEFT JOIN categories c ON c.id=p.category_id
 		LEFT JOIN terminals t ON t.id=f.terminal_id LEFT JOIN customers cu ON cu.id=f.customer_id LEFT JOIN locations l ON l.id=f.location_id
 	GROUP BY 1 ORDER BY ` + map[bool]string{true: "1", false: "10 DESC"}[group == "day" || group == "hour" || group == "weekday"]
-	rows, err := h.db.R().QueryContext(ctx, q, from, to)
+	fromDay, toDay, whole := dayRange(from, to)
+	var rows *sql.Rows
+	var err error
+	if whole {
+		rows, err = h.db.R().QueryContext(ctx, summaryQuery(group), fromDay, toDay)
+	} else {
+		rows, err = h.db.R().QueryContext(ctx, q, from, to)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +101,11 @@ func (h *Hub) SalesReport(ctx context.Context, by *Session, from, to int64, grou
 		return nil, err
 	}
 	rep.Totals.Label = "Total"
-	h.db.R().QueryRowContext(ctx, "SELECT count(*) FROM sales WHERE created_at>=? AND created_at<? AND status='completed'", from, to).Scan(&rep.Totals.Transactions)
+	if whole {
+		h.db.R().QueryRowContext(ctx, "SELECT COALESCE(sum(docs),0) FROM sales_daily WHERE day>=? AND day<?", fromDay, toDay).Scan(&rep.Totals.Transactions)
+	} else {
+		h.db.R().QueryRowContext(ctx, "SELECT count(*) FROM sales WHERE created_at>=? AND created_at<? AND status='completed'", from, to).Scan(&rep.Totals.Transactions)
+	}
 	rep.Payments, err = h.paymentTotals(ctx, from, to)
 	return rep, err
 }
@@ -101,6 +114,14 @@ func (h *Hub) SalesReport(ctx context.Context, by *Session, from, to int64, grou
 // sales (cash net of change), refunds and payments received on account.
 func (h *Hub) paymentTotals(ctx context.Context, from, to int64) ([]protocol.MethodTotal, error) {
 	r := h.db.R()
+	salePayments := `SELECT p.method_name, p.kind, sum(p.amount_minor) FROM sale_payments p JOIN sales s ON s.id=p.sale_id
+			WHERE s.created_at>=? AND s.created_at<? AND s.status='completed' GROUP BY 1,2`
+	changeQ := "SELECT COALESCE(sum(change_minor),0) FROM sales WHERE created_at>=? AND created_at<? AND status='completed'"
+	fromDay, toDay, whole := dayRange(from, to)
+	if whole {
+		salePayments = "SELECT method_name, kind, sum(amount_minor) FROM payments_daily WHERE day>=? AND day<? GROUP BY 1,2"
+		changeQ = "SELECT COALESCE(sum(change_minor),0) FROM sales_daily WHERE day>=? AND day<?"
+	}
 	methods := map[string]*protocol.MethodTotal{}
 	get := func(name, kind string) *protocol.MethodTotal {
 		m, ok := methods[name]
@@ -114,14 +135,17 @@ func (h *Hub) paymentTotals(ctx context.Context, from, to int64) ([]protocol.Met
 		q   string
 		add func(*protocol.MethodTotal, int64)
 	}{
-		{`SELECT p.method_name, p.kind, sum(p.amount_minor) FROM sale_payments p JOIN sales s ON s.id=p.sale_id
-			WHERE s.created_at>=? AND s.created_at<? AND s.status='completed' GROUP BY 1,2`, func(m *protocol.MethodTotal, v int64) { m.SalesMinor += v }},
+		{salePayments, func(m *protocol.MethodTotal, v int64) { m.SalesMinor += v }},
 		{`SELECT f.method_name, f.kind, sum(f.amount_minor) FROM return_refunds f JOIN returns r ON r.id=f.return_id
 			WHERE r.created_at>=? AND r.created_at<? GROUP BY 1,2`, func(m *protocol.MethodTotal, v int64) { m.RefundsMinor += v }},
 		{`SELECT method_name, kind, sum(amount_minor) FROM account_payments WHERE created_at>=? AND created_at<? GROUP BY 1,2`,
 			func(m *protocol.MethodTotal, v int64) { m.PaymentsMinor += v }},
 	} {
-		rows, err := r.QueryContext(ctx, src.q, from, to)
+		var a, b any = from, to
+		if whole && (src.q == salePayments) {
+			a, b = fromDay, toDay
+		}
+		rows, err := r.QueryContext(ctx, src.q, a, b)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +158,11 @@ func (h *Hub) paymentTotals(ctx context.Context, from, to int64) ([]protocol.Met
 		rows.Close()
 	}
 	var change int64
-	r.QueryRowContext(ctx, "SELECT COALESCE(sum(change_minor),0) FROM sales WHERE created_at>=? AND created_at<? AND status='completed'", from, to).Scan(&change)
+	if whole {
+		r.QueryRowContext(ctx, changeQ, fromDay, toDay).Scan(&change)
+	} else {
+		r.QueryRowContext(ctx, changeQ, from, to).Scan(&change)
+	}
 	if change > 0 {
 		cash := ""
 		for name, m := range methods {
@@ -177,9 +205,9 @@ func (h *Hub) StockReport(ctx context.Context, by *Session, f StockReportFilter)
 	if f.Limit <= 0 || f.Limit > 20000 {
 		f.Limit = 5000
 	}
-	since := startOfDayMs() - 30*86_400_000
+	since := time.UnixMilli(startOfDayMs()).AddDate(0, 0, -30).Format("2006-01-02")
 	query := `SELECT v.id, p.name, v.name, v.sku, COALESCE(c.name,''), p.unit, COALESCE(s.qty_milli,0), v.reorder_level_milli, v.cost_minor, v.price_minor,
-		COALESCE((SELECT sum(l.qty_milli) FROM sale_lines l JOIN sales sa ON sa.id=l.sale_id WHERE l.variant_id=v.id AND sa.location_id=? AND sa.created_at>=?),0)
+		COALESCE((SELECT sum(d.qty) FROM sales_daily_items d WHERE d.variant_id=v.id AND d.location_id=? AND d.day>=?),0)
 		FROM variants v JOIN products p ON p.id=v.product_id LEFT JOIN categories c ON c.id=p.category_id
 		LEFT JOIN stock_levels s ON s.variant_id=v.id AND s.location_id=?`
 	conds := []string{"p.active=1", "v.active=1", "p.track_stock=1"}
@@ -291,4 +319,39 @@ func (h *Hub) AuditLog(ctx context.Context, by *Session, from, to int64, action 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// summaryQuery reads a sales report from the daily summaries ([?1, ?2)
+// days). Columns match the raw report: key, label, sub, transactions,
+// qty, gross, discount, tax, returns, net, cost.
+func summaryQuery(group string) string {
+	const sums = "sum(docs), sum(qty), sum(gross), sum(disc), sum(tax), sum(ret), sum(net), sum(cost)"
+	const gsums = "g.docs, g.qty, g.gross, g.disc, g.tax, g.ret, g.net, g.cost"
+	const inner = "sum(docs) docs, sum(qty) qty, sum(gross) gross, sum(disc) disc, sum(tax) tax, sum(ret) ret, sum(net) net, sum(cost) cost"
+	const rng = " WHERE day>=?1 AND day<?2 "
+	byNet := " ORDER BY 10 DESC"
+	joined := func(col, table, label string) string {
+		return "SELECT g.k, " + label + ", '', " + gsums + " FROM (SELECT " + col + " k, " + inner + " FROM " + table + rng + "GROUP BY 1) g"
+	}
+	switch group {
+	case "day":
+		return "SELECT day, day, '', " + sums + " FROM sales_daily" + rng + "GROUP BY day ORDER BY 1"
+	case "hour":
+		return "SELECT printf('%02d',hour), printf('%02d:00',hour), '', " + sums + " FROM sales_daily" + rng + "GROUP BY hour ORDER BY 1"
+	case "weekday":
+		return "SELECT strftime('%w',day), strftime('%w',day), '', " + sums + " FROM sales_daily" + rng + "GROUP BY 1 ORDER BY 1"
+	case "cashier":
+		return "SELECT user_id, max(user_name), '', " + sums + " FROM sales_daily" + rng + "GROUP BY user_id" + byNet
+	case "till":
+		return joined("terminal_id", "sales_daily", "COALESCE(t.name,g.k)") + " LEFT JOIN terminals t ON t.id=g.k" + byNet
+	case "customer":
+		return joined("customer_id", "sales_daily", "COALESCE(cu.name,'Walk-in customers')") + " LEFT JOIN customers cu ON cu.id=g.k" + byNet
+	case "location":
+		return joined("location_id", "sales_daily", "COALESCE(l.name,g.k)") + " LEFT JOIN locations l ON l.id=g.k" + byNet
+	case "product":
+		return "SELECT variant_id, max(product_name), max(sub), " + sums + " FROM sales_daily_items" + rng + "GROUP BY variant_id" + byNet
+	case "category":
+		return joined("category_id", "sales_daily_cats", "COALESCE(c.name,'Uncategorised')") + " LEFT JOIN categories c ON c.id=g.k" + byNet
+	}
+	return ""
 }
