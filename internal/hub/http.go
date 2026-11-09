@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/onumahkalusamuel/zebiventor/internal/ids"
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
 )
 
@@ -563,7 +564,7 @@ func (h *Hub) Serve(ctx context.Context, addr string, ready func(net.Addr)) erro
 }
 
 func startOfDayMs() int64 {
-	now := time.Now()
+	now := ids.Now()
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).UnixMilli()
 }
 

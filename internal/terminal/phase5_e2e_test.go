@@ -1,12 +1,17 @@
 package terminal_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -356,7 +361,7 @@ func TestReportSummariesMatchRaw(t *testing.T) {
 	now := time.Now()
 	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	from, to := day.UnixMilli(), day.AddDate(0, 0, 1).UnixMilli()
-	for _, g := range []string{"day", "hour", "weekday", "product", "category", "cashier", "till", "customer", "location"} {
+	for _, g := range []string{"day", "hour", "weekday", "month", "weekhour", "product", "category", "cashier", "till", "customer", "location"} {
 		sum, err := r.h.SalesReport(r.ctx, hub.SystemSession, from, to, g)
 		if err != nil {
 			t.Fatalf("%s summary: %v", g, err)
@@ -386,4 +391,63 @@ func TestReportSummariesMatchRaw(t *testing.T) {
 			t.Errorf("%s payments differ: %s vs %s", g, pj(sum), pj(raw))
 		}
 	}
+}
+
+// An admin till exports the store; the file restores as a working store on
+// another "PC" (a fresh folder), pictures included.
+func TestExportAndRestoreElsewhere(t *testing.T) {
+	r := newRig(t, "test", "test", nil)
+	pid, _ := r.h.DB().R().Query("SELECT id FROM products LIMIT 1")
+	var productID string
+	for pid.Next() {
+		pid.Scan(&productID)
+	}
+	pid.Close()
+	if _, err := r.h.SetProductImage(r.ctx, hub.SystemSession, productID, demoJPEG()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.tm.OpenShift(r.ctx, r.user, 0); err != nil {
+		t.Fatal(err)
+	}
+	r.sell(t)
+	waitFor(t, "sale", 5*time.Second, func() bool { return r.hubSales() == 1 && r.tm.Status().Pending == 0 })
+
+	out := filepath.Join(t.TempDir(), "store.zebi.db")
+	f, _ := os.Create(out)
+	if err := r.tm.AdminDownload(r.ctx, "/api/admin/backups/export", f); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	info, err := hub.InspectBackup(r.ctx, out, "")
+	if err != nil || info.Problem != "" || info.Sales != 1 || info.StoreName != "Test Store" {
+		t.Fatalf("export: %+v %v", info, err)
+	}
+	// "Another PC": restore into an empty folder and open it.
+	dir := t.TempDir()
+	if err := hub.RestoreFile(r.ctx, dir, out); err != nil {
+		t.Fatal(err)
+	}
+	h2, err := hub.Open(r.ctx, hub.Config{DataDir: dir, Version: "test", Logger: quiet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h2.Close()
+	var n, imgs int
+	_ = h2.DB().R().QueryRow("SELECT count(*) FROM sales").Scan(&n)
+	_ = h2.DB().R().QueryRow("SELECT count(*) FROM images").Scan(&imgs)
+	if n != 1 || imgs != 1 {
+		t.Fatalf("restored store: %d sales, %d pictures", n, imgs)
+	}
+	var tid string
+	_ = h2.DB().R().QueryRow("SELECT id FROM terminals LIMIT 1").Scan(&tid)
+	if _, err := h2.Login(r.ctx, &hub.Terminal{ID: tid}, "", protocol.LoginRequest{Username: "admin", Password: "secret123"}); err != nil {
+		t.Fatalf("admin can't sign in on the restored store: %v", err)
+	}
+}
+
+func demoJPEG() []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 40, 60))
+	var b bytes.Buffer
+	_ = jpeg.Encode(&b, img, nil)
+	return b.Bytes()
 }

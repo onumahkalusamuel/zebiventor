@@ -145,3 +145,57 @@
   input, textarea, [contenteditable] { user-select: text; }
 }
 @utility tabular { font-variant-numeric: tabular-nums; }
+
+/* Chart roles (dataviz reference palette; light, then dark). Charts use
+   these roles, never raw colours, so both themes stay correct. */
+:root {
+  --viz-surface: #fcfcfb;
+  --viz-ink: #0b0b0b;
+  --viz-ink-2: #52514e;
+  --viz-muted: #898781;
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+  --viz-7: #6250d6;
+  --viz-8: #e34948;
+  --viz-up: #006300;
+  --viz-down: #d03b3b;
+  --viz-seq-0: #cde2fb;
+  --viz-seq-1: #9ec5f4;
+  --viz-seq-2: #6da7ec;
+  --viz-seq-3: #3987e5;
+  --viz-seq-4: #256abf;
+  --viz-seq-5: #184f95;
+  --viz-seq-6: #0d366b;
+}
+.dark {
+  --viz-surface: #1a1a19;
+  --viz-ink: #f0efec;
+  --viz-ink-2: #c3c2b7;
+  --viz-muted: #898781;
+  --viz-grid: #2c2c2a;
+  --viz-axis: #383835;
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+  --viz-7: #9085e9;
+  --viz-8: #e66767;
+  --viz-up: #0ca30c;
+  --viz-down: #e66767;
+  /* Dark sequential: low values recede toward the dark surface. */
+  --viz-seq-0: #104281;
+  --viz-seq-1: #184f95;
+  --viz-seq-2: #1c5cab;
+  --viz-seq-3: #2a78d6;
+  --viz-seq-4: #5598e7;
+  --viz-seq-5: #86b6ef;
+  --viz-seq-6: #cde2fb;
+}

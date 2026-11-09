@@ -279,3 +279,81 @@ func (t *Terminal) AdminUpload(ctx context.Context, path string, body io.Reader,
 	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
+
+// ProductImage returns a product picture by hash: from this till's cache,
+// else from the hub (then cached). Missing pictures return nil, nil.
+func (t *Terminal) ProductImage(ctx context.Context, hash string) ([]byte, error) {
+	if len(hash) != 32 || strings.Trim(hash, "0123456789abcdef") != "" {
+		return nil, nil
+	}
+	dir := filepath.Join(t.cfg.DataDir, "images")
+	path := filepath.Join(dir, hash+".jpg")
+	if b, err := os.ReadFile(path); err == nil {
+		return b, nil
+	}
+	p, ok := t.Pairing(ctx)
+	if !ok {
+		return nil, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.HubURL+"/api/images/"+hash, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.token)
+	t.requestHeaders(req.Header)
+	resp, err := (&http.Client{Transport: t.client.http.Transport, Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, nil // offline: the screen shows the placeholder
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, nil
+	}
+	if os.MkdirAll(dir, 0o755) == nil {
+		tmp := path + ".part"
+		if os.WriteFile(tmp, b, 0o644) == nil {
+			_ = os.Rename(tmp, path)
+		}
+	}
+	return b, nil
+}
+
+// AdminDownload streams an admin endpoint's response (a store export) into w.
+func (t *Terminal) AdminDownload(ctx context.Context, path string, w io.Writer) error {
+	p, ok := t.Pairing(ctx)
+	if !ok {
+		return errors.New("this till is not paired")
+	}
+	t.mu.Lock()
+	sess := t.session
+	t.mu.Unlock()
+	if sess == "" {
+		return ErrNeedsHub
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.HubURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.token)
+	req.Header.Set("X-Session", sess)
+	t.requestHeaders(req.Header)
+	resp, err := (&http.Client{Transport: t.client.http.Transport, Timeout: 2 * time.Hour}).Do(req)
+	if err != nil {
+		return ErrNeedsHub
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		var ae protocol.APIError
+		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&ae)
+		if ae.Error == "" {
+			ae.Error = resp.Status
+		}
+		return &HTTPError{Status: resp.StatusCode, Msg: ae.Error, Code: ae.Code}
+	}
+	_, err = io.Copy(w, resp.Body)
+	return err
+}

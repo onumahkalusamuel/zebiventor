@@ -22,7 +22,7 @@ func startOfDay(t time.Time) int64 {
 	return time.Date(y, m, d, 0, 0, 0, 0, t.Location()).UnixMilli()
 }
 
-func startOfToday() int64 { return startOfDay(time.Now()) }
+func startOfToday() int64 { return startOfDay(ids.Now()) }
 
 // SupplierMethods are the ways a shop pays its suppliers.
 var SupplierMethods = []string{"Cash", "Bank transfer", "Cheque", "Card", "Other"}

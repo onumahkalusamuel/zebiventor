@@ -52,6 +52,9 @@ export const api = {
   receiveDeliveryHere: (poId: string, input: { supplier_ref: string; note: string; close_po: boolean; lines: { po_line_id: string; qty_milli: number }[] }): Promise<void> =>
     go.ReceiveDeliveryHere(poId, input),
 
+  exportStoreData: (): Promise<string> => go.ExportStoreData(),
+  chooseStoreFile: (): Promise<T.BackupInfo | null> => go.ChooseStoreFile(),
+  setupFromBackup: (path: string, terminalName: string): Promise<void> => go.SetupFromBackup(path, terminalName),
   chooseFolder: (title: string): Promise<string> => go.ChooseFolder(title),
   chooseBackupFile: (): Promise<T.BackupInfo | null> => go.ChooseBackupFile(),
   inspectBackupFile: (path: string): Promise<T.BackupInfo> => go.InspectBackupFile(path),
@@ -101,6 +104,7 @@ export const api = {
   listProducts: (q: string): Promise<T.ProductDetail[]> => go.ListProducts(q),
   categories: (): Promise<T.Category[]> => go.Categories(),
   saveProduct: (p: T.ProductInput): Promise<string> => go.SaveProduct(p),
+  setProductImage: (productId: string, base64: string): Promise<string> => go.SetProductImage(productId, base64),
   saveCategory: (c: Partial<T.Category>): Promise<string> => go.SaveCategory(c),
   adjustStock: (r: T.StockAdjustRequest): Promise<void> => go.AdjustStock(r),
 

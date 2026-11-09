@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, Check, Loader2, Monitor, Network, Radar, Server, ShieldAlert, ShieldCheck, Store } from "lucide-react"
+import { ArchiveRestore, ArrowLeft, ArrowRight, Check, Loader2, Monitor, Network, Radar, Server, ShieldAlert, ShieldCheck, Store } from "lucide-react"
 import { toast } from "sonner"
 import { Wordmark } from "@/components/brand"
 import { Button } from "@/components/ui/button"
@@ -11,10 +11,10 @@ import { Switch } from "@/components/ui/switch"
 import { api, errorMessage } from "@/lib/api"
 import { businessTypes, securityCode } from "@/lib/format"
 import { useAppState } from "@/lib/state"
-import type { DiscoveredHub, SetupHostInput } from "@/lib/types"
+import type { BackupInfo, DiscoveredHub, SetupHostInput } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-type Step = "choose" | "host" | "join"
+type Step = "choose" | "host" | "join" | "restore"
 
 export function Setup() {
   const [step, setStep] = useState<Step>("choose")
@@ -48,6 +48,7 @@ export function Setup() {
           {step === "choose" && <Choose onPick={setStep} />}
           {step === "host" && <HostForm onBack={() => setStep("choose")} />}
           {step === "join" && <JoinForm onBack={() => setStep("choose")} />}
+          {step === "restore" && <RestoreForm onBack={() => setStep("choose")} />}
         </div>
       </main>
     </div>
@@ -73,6 +74,12 @@ function Choose({ onPick }: { onPick: (s: Step) => void }) {
           title="Join an existing store"
           body="Connect this till to a hub already running on your network, either on another till or on a back-office PC."
           onClick={() => onPick("join")}
+        />
+        <ChoiceCard
+          icon={<ArchiveRestore className="size-5" />}
+          title="Restore a store from a data file"
+          body="Bring a store's records, products and history from another computer (a file saved with Export store data, or a backup). This computer becomes its hub."
+          onClick={() => onPick("restore")}
         />
       </div>
       <p className="text-xs text-muted-foreground">
@@ -375,6 +382,68 @@ function BackHeader({ onBack, icon, title, sub }: { onBack: () => void; icon: Re
           <p className="text-sm text-muted-foreground">{sub}</p>
         </div>
       </div>
+    </div>
+  )
+}
+
+function RestoreForm({ onBack }: { onBack: () => void }) {
+  const { refresh } = useAppState()
+  const [info, setInfo] = useState<BackupInfo | null>(null)
+  const [name, setName] = useState("Front Till")
+  const [busy, setBusy] = useState(false)
+
+  async function choose() {
+    try {
+      const i = await api.chooseStoreFile()
+      if (i) setInfo(i)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
+  async function restore() {
+    if (!info) return
+    setBusy(true)
+    try {
+      await api.setupFromBackup(info.path, name)
+      toast.success(`${info.store_name} is ready on this computer`)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+      refresh()
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <BackHeader onBack={onBack} icon={<ArchiveRestore className="size-5" />} title="Restore a store" sub="Staff sign in with the same usernames and passwords as before." />
+      <Button variant="outline" className="h-11 w-full" onClick={choose}>
+        Choose the data file…
+      </Button>
+      {info &&
+        (info.problem ? (
+          <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{info.problem}</p>
+        ) : (
+          <>
+            <dl className="grid grid-cols-2 gap-y-1 rounded-xl border bg-card p-4 text-sm">
+              <dt className="text-muted-foreground">Store</dt>
+              <dd className="font-medium">{info.store_name}</dd>
+              <dt className="text-muted-foreground">Products</dt>
+              <dd className="tabular">{info.products.toLocaleString()}</dd>
+              <dt className="text-muted-foreground">Sales</dt>
+              <dd className="tabular">{info.sales.toLocaleString()}</dd>
+              <dt className="text-muted-foreground">Last activity</dt>
+              <dd>{new Date(info.taken_at).toLocaleString()}</dd>
+            </dl>
+            <Field label="Name for this till">
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Button size="lg" className="h-11 w-full text-base" disabled={busy || !name.trim()} onClick={restore}>
+              {busy ? <Loader2 className="animate-spin" /> : <ArchiveRestore />} Restore {info.store_name} on this computer
+            </Button>
+            <p className="text-xs text-muted-foreground">A big store can take a minute or two to open the first time.</p>
+          </>
+        ))}
     </div>
   )
 }

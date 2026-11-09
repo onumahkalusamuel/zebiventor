@@ -160,11 +160,11 @@ func fetchChunk(ctx context.Context, tx *sql.Tx, entity string, idList []string,
 			return err
 		})
 	case protocol.EntityProduct:
-		return q(`SELECT id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,updated_at
+		return q(`SELECT id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,updated_at,image_hash
 			FROM products WHERE id IN (`+in+")", func(r *sql.Rows) error {
 			var p protocol.Product
 			var attrs string
-			if err := r.Scan(&p.ID, &p.Name, &p.CategoryID, &p.Description, &attrs, &p.Unit, &p.AllowFraction, &p.TrackStock, &p.TaxRateBP, &p.Active, &p.UpdatedAt); err != nil {
+			if err := r.Scan(&p.ID, &p.Name, &p.CategoryID, &p.Description, &attrs, &p.Unit, &p.AllowFraction, &p.TrackStock, &p.TaxRateBP, &p.Active, &p.UpdatedAt, &p.ImageHash); err != nil {
 				return err
 			}
 			_ = json.Unmarshal([]byte(attrs), &p.Attributes)

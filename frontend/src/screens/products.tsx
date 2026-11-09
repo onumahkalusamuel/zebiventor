@@ -19,6 +19,7 @@ import { can, formatQty, parseMoney, parseQty, productFields, shopUnits } from "
 import { useLoadedState, useMoney } from "@/lib/state"
 import type { ProductDetail, ProductInput, VariantDetail } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ProductImage } from "@/components/product-image"
 
 export function Products() {
   const state = useLoadedState()
@@ -84,6 +85,9 @@ export function Products() {
                   p.variants.map((v, i) => (
                     <TableRow key={v.id} className={cn(!p.active && "opacity-50", canEdit && "cursor-pointer")} onClick={() => canEdit && setEditing(p)}>
                       <TableCell className="pl-4">
+                        <div className="flex items-center gap-3">
+                        {i === 0 ? <ProductImage hash={p.image_hash} name={p.name} className="aspect-[2/3] w-8 shrink-0" /> : <span className="w-8 shrink-0" />}
+                        <div>
                         <div className="font-medium">
                           {i === 0 || p.variants.length === 1 ? p.name : <span className="text-muted-foreground">↳</span>}
                           {v.name && <span className="text-muted-foreground"> · {v.name}</span>}
@@ -92,6 +96,8 @@ export function Products() {
                         {i === 0 && (p.attributes.author || p.attributes.brand) && (
                           <div className="text-xs text-muted-foreground">{p.attributes.author || p.attributes.brand}</div>
                         )}
+                        </div>
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">{i === 0 ? p.category_name : ""}</TableCell>
                       <TableCell className="text-muted-foreground tabular">{v.sku}</TableCell>
@@ -166,6 +172,9 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
   const [active, setActive] = useState(product?.active ?? true)
   const [taxPct, setTaxPct] = useState(product ? String((product.tax_rate_bp ?? 0) / 100) : defaultTaxPct(state.settings))
   const [newCategory, setNewCategory] = useState("")
+  // Picture: undefined = unchanged, "" = remove, otherwise base64 of the new file.
+  const [picture, setPicture] = useState<string | undefined>()
+  const [preview, setPreview] = useState<string | null>(null)
   const [variants, setVariants] = useState<VariantForm[]>(
     product?.variants.map((v) => ({
       id: v.id,
@@ -227,7 +236,14 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
           opening_location_id: "",
         })),
       }
-      await api.saveProduct(input)
+      const id = await api.saveProduct(input)
+      if (picture !== undefined) {
+        try {
+          await api.setProductImage(id || product!.id, picture)
+        } catch (e) {
+          toast.error("Saved, but the picture wasn't: " + errorMessage(e))
+        }
+      }
       toast.success(product ? "Product updated" : "Product added")
       qc.invalidateQueries()
       onClose()
@@ -245,6 +261,53 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
           <DialogTitle>{product ? "Edit product" : "New product"}</DialogTitle>
           <DialogDescription>Saved at the hub, then sent to every till automatically.</DialogDescription>
         </DialogHeader>
+
+        <div className="flex items-center gap-4">
+          {preview ? (
+            <img src={preview} alt="" className="aspect-[2/3] w-16 rounded-md object-cover" />
+          ) : (
+            <ProductImage hash={picture === "" ? undefined : product?.image_hash} name={name || "New product"} className="aspect-[2/3] w-16" />
+          )}
+          <div className="space-y-1.5">
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" size="sm" asChild>
+                <label className="cursor-pointer">
+                  Choose picture
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (!f) return
+                      const r = new FileReader()
+                      r.onload = () => {
+                        const url = String(r.result)
+                        setPreview(url)
+                        setPicture(url.slice(url.indexOf(",") + 1))
+                      }
+                      r.readAsDataURL(f)
+                    }}
+                  />
+                </label>
+              </Button>
+              {(preview || (product?.image_hash && picture !== "")) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setPreview(null)
+                    setPicture(product?.image_hash ? "" : undefined)
+                  }}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">JPEG, PNG or WebP. Shown on the till; a cover is drawn when there's none.</p>
+          </div>
+        </div>
 
         <div className="grid grid-cols-6 gap-4">
           <div className="col-span-4 space-y-1.5">

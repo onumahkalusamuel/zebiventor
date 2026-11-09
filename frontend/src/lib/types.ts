@@ -76,6 +76,7 @@ export interface Item {
   attributes: Record<string, string> | null
   pack_qty_milli: number
   tax_rate_bp: number
+  image_hash?: string
 }
 
 export interface PaymentMethod {
@@ -165,6 +166,7 @@ export interface Category {
 export interface Product {
   id: string
   name: string
+  image_hash?: string
   category_id: string
   description: string
   attributes: Record<string, string>
@@ -706,7 +708,7 @@ export interface StockReport {
   out_count: number
 }
 
-export type SalesGroup = "day" | "hour" | "weekday" | "product" | "category" | "cashier" | "till" | "customer" | "location"
+export type SalesGroup = "day" | "hour" | "weekday" | "month" | "weekhour" | "product" | "category" | "cashier" | "till" | "customer" | "location"
 
 export interface SalesReportRow {
   key: string

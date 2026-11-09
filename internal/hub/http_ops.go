@@ -1,7 +1,12 @@
 package hub
 
 import (
+	"context"
+	"database/sql"
+	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/templates"
@@ -55,6 +60,30 @@ func (h *Hub) opsRoutes(mux *http.ServeMux) {
 			err = invalid("%v", err)
 		}
 		respond(w, h.BackupStatus(r.Context()), err)
+	}))
+	mux.Handle("GET /api/admin/backups/export", admin(func(w http.ResponseWriter, r *http.Request, s *Session) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(time.Hour))
+		path, err := h.SafetyBackup(r.Context())
+		if err != nil {
+			respond(w, nil, err)
+			return
+		}
+		defer os.Remove(path)
+		f, err := os.Open(path)
+		if err != nil {
+			respond(w, nil, err)
+			return
+		}
+		defer f.Close()
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if fi, err := f.Stat(); err == nil {
+			w.Header().Set("Content-Length", strconv.FormatInt(fi.Size(), 10))
+		}
+		_, _ = io.Copy(w, f)
+		_ = h.write(r.Context(), func(ctx context.Context, tx *sql.Tx) error {
+			audit(ctx, tx, s.UserID, "", "store.export", "", "", nil)
+			return nil
+		})
 	}))
 	mux.Handle("PUT /api/admin/backups/settings", admin(func(w http.ResponseWriter, r *http.Request, s *Session) {
 		var req struct {
@@ -124,6 +153,31 @@ func (h *Hub) opsRoutes(mux *http.ServeMux) {
 		}
 		respond(w, h.UpdateStatus(r.Context()), nil)
 	}))
+
+	// Product pictures.
+	mux.Handle("POST /api/admin/products/{id}/image", h.session(func(w http.ResponseWriter, r *http.Request, s *Session) {
+		data, err := readAllLimit(r.Body)
+		if err != nil {
+			respond(w, nil, err)
+			return
+		}
+		hash, err := h.SetProductImage(r.Context(), s, r.PathValue("id"), data)
+		respond(w, map[string]string{"image_hash": hash}, err)
+	}))
+	mux.Handle("DELETE /api/admin/products/{id}/image", h.session(func(w http.ResponseWriter, r *http.Request, s *Session) {
+		_, err := h.SetProductImage(r.Context(), s, r.PathValue("id"), nil)
+		respond(w, map[string]bool{"ok": true}, err)
+	}))
+	mux.Handle("GET /api/images/{hash}", h.terminalAuth(func(w http.ResponseWriter, r *http.Request) {
+		data, err := h.Image(r.Context(), r.PathValue("hash"))
+		if err != nil || data == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		_, _ = w.Write(data)
+	}, false))
 
 	// Email.
 	mux.Handle("GET /api/admin/email", h.session(func(w http.ResponseWriter, r *http.Request, s *Session) {

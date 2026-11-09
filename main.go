@@ -22,7 +22,7 @@ func main() {
 		MinWidth:         1100,
 		MinHeight:        700,
 		WindowStartState: options.Maximised,
-		AssetServer:      &assetserver.Options{Assets: assets},
+		AssetServer:      &assetserver.Options{Assets: assets, Handler: app.assetHandler()},
 		BackgroundColour: &options.RGBA{R: 250, G: 250, B: 250, A: 1},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,

@@ -27,6 +27,7 @@ type Item struct {
 	CategoryID    string            `json:"category_id"`
 	Attributes    map[string]string `json:"attributes"`
 	TaxRateBP     int64             `json:"tax_rate_bp"`
+	ImageHash     string            `json:"image_hash"`
 	// PackQtyMilli is set when the item was found by a pack barcode.
 	PackQtyMilli int64 `json:"pack_qty_milli"`
 }
@@ -68,14 +69,14 @@ const pendingStock = `- COALESCE((SELECT sum(l.qty_milli) FROM sale_lines l JOIN
 const itemSelect = `SELECT v.id, p.id, p.name, v.name, v.sku, v.price_minor, p.unit, p.allow_fraction, p.track_stock,
 	COALESCE((SELECT qty_milli FROM stock_levels WHERE variant_id=v.id AND location_id=?),0)
 	` + pendingStock + `,
-	p.category_id, p.attributes, p.tax_rate_bp
+	p.category_id, p.attributes, p.tax_rate_bp, p.image_hash
 	FROM variants v JOIN products p ON p.id=v.product_id`
 
 func scanItem(r interface{ Scan(...any) error }) (Item, error) {
 	var it Item
 	var attrs string
 	err := r.Scan(&it.VariantID, &it.ProductID, &it.Name, &it.VariantName, &it.SKU, &it.PriceMinor, &it.Unit,
-		&it.AllowFraction, &it.TrackStock, &it.StockMilli, &it.CategoryID, &attrs, &it.TaxRateBP)
+		&it.AllowFraction, &it.TrackStock, &it.StockMilli, &it.CategoryID, &attrs, &it.TaxRateBP, &it.ImageHash)
 	if err == nil {
 		_ = json.Unmarshal([]byte(attrs), &it.Attributes)
 	}
@@ -215,7 +216,7 @@ func (t *Terminal) ListProducts(ctx context.Context, query string, limit int) ([
 	}
 	args = append(args, limit)
 	rows, err := t.db.R().QueryContext(ctx, `SELECT p.id,p.name,p.category_id,p.description,p.attributes,p.unit,p.allow_fraction,p.track_stock,
-		p.tax_rate_bp,p.active,p.updated_at,COALESCE(c.name,'') FROM products p LEFT JOIN categories c ON c.id=p.category_id
+		p.tax_rate_bp,p.active,p.updated_at,COALESCE(c.name,''),p.image_hash FROM products p LEFT JOIN categories c ON c.id=p.category_id
 		WHERE `+strings.Join(where, " AND ")+` ORDER BY p.active DESC, p.name COLLATE NOCASE LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
@@ -226,7 +227,7 @@ func (t *Terminal) ListProducts(ctx context.Context, query string, limit int) ([
 		var d ProductDetail
 		var attrs string
 		if err := rows.Scan(&d.ID, &d.Name, &d.CategoryID, &d.Description, &attrs, &d.Unit, &d.AllowFraction, &d.TrackStock,
-			&d.TaxRateBP, &d.Active, &d.UpdatedAt, &d.CategoryName); err != nil {
+			&d.TaxRateBP, &d.Active, &d.UpdatedAt, &d.CategoryName, &d.ImageHash); err != nil {
 			rows.Close()
 			return nil, err
 		}

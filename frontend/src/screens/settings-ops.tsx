@@ -198,17 +198,17 @@ function BackupPanel() {
   const st = useQuery({ queryKey: ["bo", "backups"], queryFn: hub.backups })
   const [folder, setFolder] = useState<string | null>(null)
   const [keep, setKeep] = useState<string | null>(null)
-  const [busy, setBusy] = useState<"" | "save" | "now">("")
+  const [busy, setBusy] = useState<"" | "save" | "now" | "export">("")
   const [restore, setRestore] = useState<BackupInfo | null>(null)
   const d = st.data
 
-  async function run(kind: "save" | "now", fn: () => Promise<unknown>, ok: string) {
+  async function run(kind: "save" | "now" | "export", fn: () => Promise<unknown>, ok: string) {
     setBusy(kind)
     try {
       await fn()
-      toast.success(ok)
+      if (ok) toast.success(ok)
     } catch (e) {
-      toast.error(errorMessage(e))
+      if (errorMessage(e) !== "Cancelled") toast.error(errorMessage(e))
     } finally {
       setBusy("")
       qc.invalidateQueries({ queryKey: ["bo", "backups"] })
@@ -248,9 +248,29 @@ function BackupPanel() {
         description="The hub saves a full copy of the store's records once a day, on the hub PC and (if set) on a second drive, USB stick or network folder."
         actions={
           isAdmin && (
-            <Button variant="outline" disabled={!!busy} onClick={() => run("now", hub.backupNow, "Backup made")}>
-              {busy === "now" ? <Loader2 className="animate-spin" /> : <HardDriveDownload />} Back up now
-            </Button>
+            <>
+              <Button variant="outline" disabled={!!busy} onClick={() => run("now", hub.backupNow, "Backup made")}>
+                {busy === "now" ? <Loader2 className="animate-spin" /> : <HardDriveDownload />} Back up now
+              </Button>
+              <Button
+                variant="outline"
+                disabled={!!busy}
+                title="Save every record, picture and the history to one file, to open on another computer"
+                onClick={() =>
+                  run(
+                    "export",
+                    async () => {
+                      const p = await api.exportStoreData()
+                      if (!p) throw new Error("Cancelled")
+                      toast.success("Store data saved", { description: p + ". On the other computer, choose \u201cRestore a store from a data file\u201d when setting up." })
+                    },
+                    "",
+                  )
+                }
+              >
+                {busy === "export" ? <Loader2 className="animate-spin" /> : <Upload />} Export store data
+              </Button>
+            </>
           )
         }
       >

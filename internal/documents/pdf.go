@@ -315,3 +315,8 @@ func wrap(pdf *fpdf.Fpdf, text string, width float64) []string {
 	}
 	return lines
 }
+
+// FontBold and FontRegular expose the embedded DejaVu Sans Condensed faces
+// (the demo generator draws book covers with them).
+func FontBold() []byte    { return fontBold }
+func FontRegular() []byte { return fontRegular }

@@ -94,6 +94,7 @@ type Product struct {
 	TaxRateBP     int64             `json:"tax_rate_bp"` // basis points; reserved for phase 2
 	Active        bool              `json:"active"`
 	UpdatedAt     int64             `json:"updated_at"`
+	ImageHash     string            `json:"image_hash"` // picture (GET /api/images/{hash}); "" = none
 }
 
 // Variant is the stock-keeping unit (hardcover vs paperback, 50cl vs 1l).

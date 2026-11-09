@@ -255,12 +255,12 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 		}
 		for _, p := range r.Products {
 			attrs, _ := json.Marshal(p.Attributes)
-			if err := exec(`INSERT INTO products(id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,updated_at,search)
-				VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET stale=0, name=excluded.name, category_id=excluded.category_id,
+			if err := exec(`INSERT INTO products(id,name,category_id,description,attributes,unit,allow_fraction,track_stock,tax_rate_bp,active,updated_at,search,image_hash)
+				VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET stale=0, image_hash=excluded.image_hash, name=excluded.name, category_id=excluded.category_id,
 				description=excluded.description, attributes=excluded.attributes, unit=excluded.unit, allow_fraction=excluded.allow_fraction,
 				track_stock=excluded.track_stock, tax_rate_bp=excluded.tax_rate_bp, active=excluded.active, updated_at=excluded.updated_at, search=excluded.search`,
 				p.ID, p.Name, p.CategoryID, p.Description, string(attrs), p.Unit, boolInt(p.AllowFraction), boolInt(p.TrackStock),
-				p.TaxRateBP, boolInt(p.Active), p.UpdatedAt, searchText(p)); err != nil {
+				p.TaxRateBP, boolInt(p.Active), p.UpdatedAt, searchText(p), p.ImageHash); err != nil {
 				return err
 			}
 		}

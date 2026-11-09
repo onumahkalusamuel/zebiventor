@@ -12,3 +12,4 @@ build/windows/installer/tmp
 /dist
 release.key
 *.key
+/demo-data

@@ -34,6 +34,10 @@ export function ChooseFolder(arg1) {
   return window['go']['main']['App']['ChooseFolder'](arg1);
 }
 
+export function ChooseStoreFile() {
+  return window['go']['main']['App']['ChooseStoreFile']();
+}
+
 export function CloseShift(arg1, arg2) {
   return window['go']['main']['App']['CloseShift'](arg1, arg2);
 }
@@ -76,6 +80,10 @@ export function EmailDocument(arg1, arg2, arg3) {
 
 export function ExpectedDeliveries() {
   return window['go']['main']['App']['ExpectedDeliveries']();
+}
+
+export function ExportStoreData() {
+  return window['go']['main']['App']['ExportStoreData']();
 }
 
 export function GetDiagnostics() {
@@ -300,6 +308,14 @@ export function SendTransferHere(arg1) {
 
 export function SetHubAddress(arg1) {
   return window['go']['main']['App']['SetHubAddress'](arg1);
+}
+
+export function SetProductImage(arg1, arg2) {
+  return window['go']['main']['App']['SetProductImage'](arg1, arg2);
+}
+
+export function SetupFromBackup(arg1, arg2) {
+  return window['go']['main']['App']['SetupFromBackup'](arg1, arg2);
 }
 
 export function SetupHost(arg1) {

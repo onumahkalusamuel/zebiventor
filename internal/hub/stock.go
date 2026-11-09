@@ -449,7 +449,7 @@ func (h *Hub) CreateStockCount(ctx context.Context, by *Session, in StockCountIn
 		}
 		name := trim(in.Name)
 		if name == "" {
-			name = "Stock count " + time.Now().Format("2 Jan 2006")
+			name = "Stock count " + ids.Now().Format("2 Jan 2006")
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO stock_counts(id,count_no,name,location_id,category_id,status,created_by,created_at) VALUES(?,?,?,?,?,'open',?,?)`,
 			id, no, name, loc, in.CategoryID, by.UserID, ids.NowMs())

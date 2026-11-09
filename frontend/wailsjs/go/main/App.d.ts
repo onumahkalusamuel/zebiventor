@@ -23,6 +23,8 @@ export function ChooseBackupFile():Promise<hub.BackupInfo>;
 
 export function ChooseFolder(arg1:string):Promise<string>;
 
+export function ChooseStoreFile():Promise<hub.BackupInfo>;
+
 export function CloseShift(arg1:number,arg2:string):Promise<main.CloseShiftResult>;
 
 export function CompleteReturn(arg1:terminal.ReturnInput):Promise<main.ReturnResult>;
@@ -44,6 +46,8 @@ export function DownloadUpdate():Promise<void>;
 export function EmailDocument(arg1:string,arg2:string,arg3:main.EmailDraft):Promise<void>;
 
 export function ExpectedDeliveries():Promise<Array<terminal.ExpectedDelivery>>;
+
+export function ExportStoreData():Promise<string>;
 
 export function GetDiagnostics():Promise<main.Diagnostics>;
 
@@ -156,6 +160,10 @@ export function SearchItems(arg1:string):Promise<Array<terminal.Item>>;
 export function SendTransferHere(arg1:terminal.SendTransferInput):Promise<protocol.StockTransfer>;
 
 export function SetHubAddress(arg1:string):Promise<void>;
+
+export function SetProductImage(arg1:string,arg2:string):Promise<string>;
+
+export function SetupFromBackup(arg1:string,arg2:string):Promise<void>;
 
 export function SetupHost(arg1:main.SetupHostInput):Promise<void>;
 

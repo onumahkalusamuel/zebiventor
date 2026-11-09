@@ -1,12 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -84,6 +89,50 @@ func (a *App) ReceiveDeliveryHere(poID string, in terminal.DeliveryInput) error 
 		return err
 	}
 	return a.term.ReceiveDelivery(a.ctx, u, poID, in)
+}
+
+// ---------- product pictures ----------
+
+// assetHandler serves product pictures to the screens at /img/<hash>.
+func (a *App) assetHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hash, ok := strings.CutPrefix(r.URL.Path, "/img/")
+		if !ok || a.term == nil {
+			http.NotFound(w, r)
+			return
+		}
+		data, err := a.term.ProductImage(r.Context(), hash)
+		if err != nil || data == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "max-age=31536000, immutable")
+		_, _ = w.Write(data)
+	})
+}
+
+// SetProductImage uploads a picture (base64) for a product; "" removes it.
+func (a *App) SetProductImage(productID, base64Data string) (string, error) {
+	if _, err := a.currentUser(protocol.RoleAdmin, protocol.RoleManager, protocol.RoleInventory); err != nil {
+		return "", err
+	}
+	path := "/api/admin/products/" + url.PathEscape(productID) + "/image"
+	if base64Data == "" {
+		return "", a.term.Admin(a.ctx, http.MethodDelete, path, nil, nil)
+	}
+	data, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return "", errors.New("the picture could not be read")
+	}
+	var out struct {
+		ImageHash string `json:"image_hash"`
+	}
+	if err := a.term.AdminUpload(a.ctx, path, bytes.NewReader(data), &out); err != nil {
+		return "", err
+	}
+	a.term.Nudge()
+	return out.ImageHash, nil
 }
 
 // ---------- backups & restore (on the PC that runs the hub) ----------
@@ -181,6 +230,111 @@ func (a *App) RestoreBackup(path string) (string, error) {
 	a.term.Nudge()
 	a.log.Info("restore complete", "backup", path)
 	return safety, startErr
+}
+
+// ---------- moving a store to another PC ----------
+
+// ExportStoreData saves a complete copy of the store (every record and
+// picture) to a file the person chooses, to restore on another PC. Any
+// admin till can do it; the hub makes the copy.
+func (a *App) ExportStoreData() (string, error) {
+	if _, err := a.currentUser(protocol.RoleAdmin); err != nil {
+		return "", err
+	}
+	name := safeFileName(a.term.Settings(a.ctx)["store_name"])
+	if name == "" {
+		name = "Store"
+	}
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Save the store's data",
+		DefaultFilename: name + " " + time.Now().Format("2006-01-02") + ".zebi.db",
+		Filters:         []runtime.FileFilter{{DisplayName: "Zebiventor store data (*.db)", Pattern: "*.db"}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	tmp := path + ".part"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return "", err
+	}
+	err = a.term.AdminDownload(a.ctx, "/api/admin/backups/export", f)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return "", err
+	}
+	a.log.Info("store data exported", "path", path)
+	return path, nil
+}
+
+// ChooseStoreFile asks for a store data file (export or backup) during
+// first-run setup and describes it.
+func (a *App) ChooseStoreFile() (*hub.BackupInfo, error) {
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:   "Choose the store's data file",
+		Filters: []runtime.FileFilter{{DisplayName: "Zebiventor store data (*.db)", Pattern: "*.db"}},
+	})
+	if err != nil || path == "" {
+		return nil, err
+	}
+	info, err := hub.InspectBackup(a.ctx, path, "")
+	return &info, err
+}
+
+// SetupFromBackup sets this PC up as the hub of a store restored from a
+// data file, and as its first till. Staff sign in with their usual names.
+func (a *App) SetupFromBackup(path, terminalName string) error {
+	if a.term == nil {
+		return errors.New("local database unavailable")
+	}
+	if _, ok := a.term.Pairing(a.ctx); ok {
+		return errors.New("this computer is already set up")
+	}
+	a.mu.Lock()
+	running := a.hub != nil
+	a.mu.Unlock()
+	if running {
+		return errors.New("a store is already open on this computer")
+	}
+	dir := filepath.Join(a.dataDir, "hub")
+	if _, err := os.Stat(filepath.Join(dir, "hub.db")); err == nil {
+		return errors.New("this computer already has store data; restore it from Settings → Backups instead")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := hub.RestoreFile(a.ctx, dir, path); err != nil {
+		return err
+	}
+	h, err := a.openHub()
+	if err != nil {
+		return err
+	}
+	if err := a.startHub(); err != nil {
+		return err
+	}
+	if terminalName == "" {
+		terminalName = "This PC"
+	}
+	code, err := h.CreatePairingCode(a.ctx, "", protocol.PairingCodeRequest{TerminalName: terminalName})
+	if err != nil {
+		return err
+	}
+	if _, err := a.term.Pair(a.ctx, fmt.Sprintf("127.0.0.1:%d", a.cfg.HubPort), code.Code, terminalName); err != nil {
+		return err
+	}
+	a.cfg.Mode = ModeHost
+	if err := a.saveConfig(); err != nil {
+		return err
+	}
+	a.log.Info("store restored from data file", "path", path)
+	return a.afterPair()
 }
 
 // ---------- updates ----------

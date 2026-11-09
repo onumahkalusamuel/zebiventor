@@ -177,7 +177,7 @@ export function ItemPicker({ location, onPick, placeholder = "Scan a barcode or 
 
 // ---------- periods ----------
 
-export type PeriodKey = "today" | "yesterday" | "week" | "month" | "last_month" | "30d" | "year" | "custom"
+export type PeriodKey = "today" | "yesterday" | "week" | "month" | "last_month" | "30d" | "90d" | "year" | "12m" | "last_year" | "all" | "custom"
 
 export const periodLabels: Record<PeriodKey, string> = {
   today: "Today",
@@ -186,7 +186,11 @@ export const periodLabels: Record<PeriodKey, string> = {
   month: "This month",
   last_month: "Last month",
   "30d": "Last 30 days",
+  "90d": "Last 90 days",
   year: "This year",
+  "12m": "Last 12 months",
+  last_year: "Last year",
+  all: "All time",
   custom: "Custom…",
 }
 
@@ -223,8 +227,16 @@ export function periodRange(key: PeriodKey, custom: { from: string; to: string }
       return [new Date(today.getFullYear(), today.getMonth() - 1, 1).getTime(), new Date(today.getFullYear(), today.getMonth(), 1).getTime()]
     case "30d":
       return [add(today, -29).getTime(), add(today, 1).getTime()]
+    case "90d":
+      return [add(today, -89).getTime(), add(today, 1).getTime()]
     case "year":
       return [new Date(today.getFullYear(), 0, 1).getTime(), add(today, 1).getTime()]
+    case "12m":
+      return [new Date(today.getFullYear(), today.getMonth() - 11, 1).getTime(), add(today, 1).getTime()]
+    case "last_year":
+      return [new Date(today.getFullYear() - 1, 0, 1).getTime(), new Date(today.getFullYear(), 0, 1).getTime()]
+    case "all":
+      return [new Date(2000, 0, 1).getTime(), add(today, 1).getTime()]
     case "custom": {
       const f = fromDateInput(custom.from)
       const t = fromDateInput(custom.to)

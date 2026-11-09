@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react"
-import { BarChart3, Boxes, CircleHelp, Clock, Truck, Warehouse, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
+import { BarChart3, Boxes, CircleHelp, LayoutDashboard, Clock, Truck, Warehouse, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
 import { ApprovalProvider } from "@/components/approval"
 import { useShift } from "@/components/shift-gate"
 import { LogoMark } from "@/components/brand"
@@ -24,9 +24,10 @@ import { Customers } from "./customers"
 import { Purchasing } from "./purchasing"
 import { Stock } from "./stock"
 import { Reports } from "./reports"
+import { Dashboard } from "./dashboard"
 import { formatDateTime } from "@/lib/format"
 
-type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "stock" | "purchasing" | "reports" | "team" | "tills" | "settings" | "help"
+type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "stock" | "purchasing" | "dashboard" | "reports" | "team" | "tills" | "settings" | "help"
 
 const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: string }>; roles: Role[]; el: ComponentType }[] = [
   { key: "sell", label: "Sell", icon: ShoppingCart, roles: ["admin", "manager", "cashier"], el: Sell },
@@ -37,6 +38,7 @@ const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: st
   { key: "products", label: "Products", icon: Boxes, roles: ["admin", "manager", "inventory", "cashier"], el: Products },
   { key: "stock", label: "Stock", icon: Warehouse, roles: ["admin", "manager", "inventory"], el: Stock },
   { key: "purchasing", label: "Purchasing", icon: Truck, roles: ["admin", "manager", "inventory"], el: Purchasing },
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "manager"], el: Dashboard },
   { key: "reports", label: "Reports", icon: BarChart3, roles: ["admin", "manager"], el: Reports },
   { key: "team", label: "Team", icon: Users, roles: ["admin"], el: Team },
   { key: "tills", label: "Tills", icon: MonitorSmartphone, roles: ["admin", "manager"], el: Tills },

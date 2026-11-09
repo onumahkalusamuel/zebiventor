@@ -153,6 +153,16 @@ the hub's records, so they need the hub to be reachable. Selling stays offline-c
   price, and can be refunded as store credit, spent later at any till.
 - *Reports* read daily summaries kept alongside sales, so a year of a busy
   shop reports in milliseconds (`docs/LOADTEST.md`).
+- *Dashboard:* sales and gross profit over time, categories, best sellers,
+  sales points, payment mix and busiest hours, for any period, compared with
+  the period before; every chart can be shown as a table.
+- *Product pictures:* kept at the hub (so backups carry them), resized, sent to
+  tills by reference and cached; a drawn cover stands in when there's none.
+- *Moving a store:* Settings → Backups → **Export store data** saves everything
+  to one file; on another PC, first-run setup → **Restore a store from a data
+  file**.
+- *Demo store:* `cmd/zebidemo` builds TMIT Bookstore, nearly four years of trading
+  with real books (`docs/DEMO-DATA.md`).
 - *Help:* a staff guide inside the app (left bar → Help), with the topics
   for each person's role.
 - *Approval rules:* each manager-approval requirement (discount, price
@@ -201,6 +211,7 @@ internal/documents     A4 documents (purchase order, statements…) as printable
 internal/templates     starting set-up per type of shop
 internal/update        update packages: manifest, signature, checks
 cmd/zebirelease        signs installers into releases / update files
+cmd/zebidemo, internal/demo   demo-store generator (real books, years of trading)
 internal/discovery     mDNS advertise/browse
 internal/protocol      wire types shared by hub and tills
 frontend/              React + TypeScript + Tailwind v4 + shadcn/ui

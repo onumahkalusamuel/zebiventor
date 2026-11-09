@@ -32,6 +32,7 @@ import { computeTotals, lineGross, type TaxMode } from "@/lib/pricing"
 import { useLoadedState, useMoney } from "@/lib/state"
 import type { Customer, Item } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { ProductImage } from "@/components/product-image"
 import { PayDialog } from "./pay-dialog"
 
 export interface CartLine {
@@ -301,11 +302,16 @@ function SellScreen() {
                   }}
                   className="group flex min-h-[124px] flex-col rounded-xl border bg-card p-3.5 text-left transition-all hover:-translate-y-px hover:border-primary/40 hover:shadow-md active:translate-y-0"
                 >
-                  <div className="line-clamp-2 font-medium leading-snug">
-                    {it.name}
-                    {it.variant_name && <span className="text-muted-foreground"> · {it.variant_name}</span>}
+                  <div className="flex gap-3">
+                    <ProductImage hash={it.image_hash} name={it.name} sub={author} className="aspect-[2/3] w-12 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 font-medium leading-snug">
+                        {it.name}
+                        {it.variant_name && <span className="text-muted-foreground"> · {it.variant_name}</span>}
+                      </div>
+                      {author && <div className="mt-0.5 truncate text-xs text-muted-foreground">{author}</div>}
+                    </div>
                   </div>
-                  {author && <div className="mt-0.5 truncate text-xs text-muted-foreground">{author}</div>}
                   <div className="mt-auto flex items-end justify-between pt-3">
                     <div className="text-base font-semibold tabular">{fmt(it.price_minor)}</div>
                     {it.track_stock && (

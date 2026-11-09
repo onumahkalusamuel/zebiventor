@@ -843,6 +843,7 @@ export namespace protocol {
 	    tax_rate_bp: number;
 	    active: boolean;
 	    updated_at: number;
+	    image_hash: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Product(source);
@@ -861,6 +862,7 @@ export namespace protocol {
 	        this.tax_rate_bp = source["tax_rate_bp"];
 	        this.active = source["active"];
 	        this.updated_at = source["updated_at"];
+	        this.image_hash = source["image_hash"];
 	    }
 	}
 	export class VariantInput {
@@ -1908,6 +1910,7 @@ export namespace terminal {
 	    category_id: string;
 	    attributes: Record<string, string>;
 	    tax_rate_bp: number;
+	    image_hash: string;
 	    pack_qty_milli: number;
 	
 	    static createFrom(source: any = {}) {
@@ -1929,6 +1932,7 @@ export namespace terminal {
 	        this.category_id = source["category_id"];
 	        this.attributes = source["attributes"];
 	        this.tax_rate_bp = source["tax_rate_bp"];
+	        this.image_hash = source["image_hash"];
 	        this.pack_qty_milli = source["pack_qty_milli"];
 	    }
 	}
@@ -2086,6 +2090,7 @@ export namespace terminal {
 	    tax_rate_bp: number;
 	    active: boolean;
 	    updated_at: number;
+	    image_hash: string;
 	    category_name: string;
 	    variants: VariantDetail[];
 	
@@ -2106,6 +2111,7 @@ export namespace terminal {
 	        this.tax_rate_bp = source["tax_rate_bp"];
 	        this.active = source["active"];
 	        this.updated_at = source["updated_at"];
+	        this.image_hash = source["image_hash"];
 	        this.category_name = source["category_name"];
 	        this.variants = this.convertValues(source["variants"], VariantDetail);
 	    }

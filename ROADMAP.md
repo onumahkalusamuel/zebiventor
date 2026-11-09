@@ -72,6 +72,14 @@ Status: **phase 6 done** · all planned phases complete and on `main`; remaining
 - [x] Staff guide inside the app (Help): how-to topics for selling, returns, shifts, stock, purchasing, settings, backups, updates and troubleshooting, shown by role and searchable
 - [x] Rebuild merged into `main` and pushed
 
+## Phase 7 — Test data, pictures, dashboards, moving stores
+
+- [x] Wails 3 reviewed (v3.0.0 final 26 Oct 2026): staying on Wails 2 for now (see Later)
+- [x] Product pictures: stored at the hub (in backups), resized, synced by reference, cached by tills; drawn cover when there's none
+- [x] Dashboard with charts: sales and profit over time, categories, best sellers, sales points, payment mix, busiest hours; every chart has a table view
+- [x] Export store data to a file, and restore a store from a file when setting up a new PC
+- [x] TMIT Bookstore demo data: real books with covers, three sales points, 2023 to now, full operations (`docs/DEMO-DATA.md`)
+
 ## Needs you
 
 - [ ] **Test on a real Windows till with the thermal printer.** Build the installer
@@ -81,6 +89,12 @@ Status: **phase 6 done** · all planned phases complete and on `main`; remaining
   **Save support file** and send it over.
 
 ## Later (parked by the owner)
+
+- [ ] **Move to Wails 3** once it has settled. v3.0.0 came out on 26 Oct 2026 after
+  34 betas, with security fixes still landing and one advisory only partly fixed
+  (embedded frames, which we don't use). Moving is a port (new app lifecycle,
+  services instead of bindings, new runtime and build system), not a version
+  bump, and Wails 2 is still maintained. Revisit after a few quiet 3.x releases.
 
 - [ ] **Release signing key:** run `go run ./cmd/zebirelease keygen` once, keep
   `release.key` safe and offline, and build releases with `ZEBI_UPDATE_KEY` set to

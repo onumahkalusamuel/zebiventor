@@ -16,6 +16,8 @@ var salesGroups = map[string]struct{ key, label, sub string }{
 	"day":      {"date(f.at/1000,'unixepoch','localtime')", "date(f.at/1000,'unixepoch','localtime')", "''"},
 	"hour":     {"strftime('%H',f.at/1000,'unixepoch','localtime')", "strftime('%H:00',f.at/1000,'unixepoch','localtime')", "''"},
 	"weekday":  {"strftime('%w',f.at/1000,'unixepoch','localtime')", "strftime('%w',f.at/1000,'unixepoch','localtime')", "''"},
+	"month":    {"strftime('%Y-%m',f.at/1000,'unixepoch','localtime')", "strftime('%Y-%m',f.at/1000,'unixepoch','localtime')", "''"},
+	"weekhour": {"strftime('%w-%H',f.at/1000,'unixepoch','localtime')", "strftime('%w-%H',f.at/1000,'unixepoch','localtime')", "''"},
 	"product":  {"f.variant_id", "max(f.product_name)", "max(CASE WHEN f.variant_name<>'' THEN f.variant_name ELSE f.sku END)"},
 	"category": {"COALESCE(p.category_id,'')", "COALESCE(max(c.name),'Uncategorised')", "''"},
 	"cashier":  {"f.user_id", "max(f.user_name)", "''"},
@@ -61,7 +63,7 @@ func (h *Hub) SalesReport(ctx context.Context, by *Session, from, to int64, grou
 		count(DISTINCT CASE WHEN f.is_sale=1 THEN f.doc END), sum(f.qty), sum(f.gross), sum(f.disc), sum(f.tax), sum(f.ret), sum(f.net), sum(f.cost)
 	FROM f LEFT JOIN variants v ON v.id=f.variant_id LEFT JOIN products p ON p.id=v.product_id LEFT JOIN categories c ON c.id=p.category_id
 		LEFT JOIN terminals t ON t.id=f.terminal_id LEFT JOIN customers cu ON cu.id=f.customer_id LEFT JOIN locations l ON l.id=f.location_id
-	GROUP BY 1 ORDER BY ` + map[bool]string{true: "1", false: "10 DESC"}[group == "day" || group == "hour" || group == "weekday"]
+	GROUP BY 1 ORDER BY ` + map[bool]string{true: "1", false: "10 DESC"}[group == "day" || group == "hour" || group == "weekday" || group == "month" || group == "weekhour"]
 	fromDay, toDay, whole := dayRange(from, to)
 	var rows *sql.Rows
 	var err error
@@ -340,6 +342,10 @@ func summaryQuery(group string) string {
 		return "SELECT printf('%02d',hour), printf('%02d:00',hour), '', " + sums + " FROM sales_daily" + rng + "GROUP BY hour ORDER BY 1"
 	case "weekday":
 		return "SELECT strftime('%w',day), strftime('%w',day), '', " + sums + " FROM sales_daily" + rng + "GROUP BY 1 ORDER BY 1"
+	case "month":
+		return "SELECT substr(day,1,7), substr(day,1,7), '', " + sums + " FROM sales_daily" + rng + "GROUP BY 1 ORDER BY 1"
+	case "weekhour":
+		return "SELECT strftime('%w',day) || '-' || printf('%02d',hour), strftime('%w',day) || '-' || printf('%02d',hour), '', " + sums + " FROM sales_daily" + rng + "GROUP BY 1 ORDER BY 1"
 	case "cashier":
 		return "SELECT user_id, max(user_name), '', " + sums + " FROM sales_daily" + rng + "GROUP BY user_id" + byNet
 	case "till":
