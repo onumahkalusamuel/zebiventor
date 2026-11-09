@@ -5,7 +5,7 @@ work that should be done is listed under a phase here and ticked off when it
 lands. Things only the shop owner can do (hardware, certificates) are listed
 under **Needs you**.
 
-Status: **phase 5 done** · all planned phases complete; remaining items need the owner (below)
+Status: **phase 6 done** · all planned phases complete and on `main`; remaining items need the owner (below)
 
 ## Phase 1 — Hub, tills, sync, printing ✅ `914cc8d`
 
@@ -56,7 +56,7 @@ Status: **phase 5 done** · all planned phases complete; remaining items need th
 - [x] Branches: tills receive transfers and see what's on its way while offline (queued like sales); branch set-up over a private network documented
 - [x] Fix: long polls now end when the hub closes, so tills reconnect at once after a hub restart
 
-## Phase 5 — Hardening ✅ branch `rebuild/phase-5`
+## Phase 5 — Hardening ✅ `c10e6ff`
 
 - [x] Encrypted LAN sync: the hub serves TLS with its own certificate (kept in its database, so restores keep it); tills pin it at pairing and refuse any other; security code shown on both screens when pairing; tills paired earlier upgrade themselves; admins can refuse unencrypted connections once every till is updated (Tills)
 - [x] Returns without a receipt: manager approval always, refund up to today's price, money back or store credit
@@ -66,6 +66,11 @@ Status: **phase 5 done** · all planned phases complete; remaining items need th
 - [x] PDF attachments for emailed documents
 - [x] Tills retire products the hub no longer has after its data is put back from an older copy
 - [x] Branch work offline: send transfers and receive purchase-order deliveries at a till without the hub
+
+## Phase 6 — Hand-over ✅
+
+- [x] Staff guide inside the app (Help): how-to topics for selling, returns, shifts, stock, purchasing, settings, backups, updates and troubleshooting, shown by role and searchable
+- [x] Rebuild merged into `main` and pushed
 
 ## Needs you
 

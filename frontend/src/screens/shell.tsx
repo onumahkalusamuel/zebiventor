@@ -1,5 +1,5 @@
 import { useEffect, useState, type ComponentType } from "react"
-import { BarChart3, Boxes, Clock, Truck, Warehouse, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
+import { BarChart3, Boxes, CircleHelp, Clock, Truck, Warehouse, LogOut, MonitorSmartphone, Moon, Receipt, RotateCcw, Settings as SettingsIcon, ShoppingCart, Sun, UserRound, Users, Wallet } from "lucide-react"
 import { ApprovalProvider } from "@/components/approval"
 import { useShift } from "@/components/shift-gate"
 import { LogoMark } from "@/components/brand"
@@ -17,6 +17,7 @@ import { Products } from "./products"
 import { Team } from "./team"
 import { Tills } from "./tills"
 import { Settings } from "./settings"
+import { Help } from "./help"
 import { Returns } from "./returns"
 import { Shift } from "./shift"
 import { Customers } from "./customers"
@@ -25,7 +26,7 @@ import { Stock } from "./stock"
 import { Reports } from "./reports"
 import { formatDateTime } from "@/lib/format"
 
-type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "stock" | "purchasing" | "reports" | "team" | "tills" | "settings"
+type PageKey = "sell" | "returns" | "sales" | "shift" | "customers" | "products" | "stock" | "purchasing" | "reports" | "team" | "tills" | "settings" | "help"
 
 const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: string }>; roles: Role[]; el: ComponentType }[] = [
   { key: "sell", label: "Sell", icon: ShoppingCart, roles: ["admin", "manager", "cashier"], el: Sell },
@@ -40,6 +41,7 @@ const pages: { key: PageKey; label: string; icon: ComponentType<{ className?: st
   { key: "team", label: "Team", icon: Users, roles: ["admin"], el: Team },
   { key: "tills", label: "Tills", icon: MonitorSmartphone, roles: ["admin", "manager"], el: Tills },
   { key: "settings", label: "Settings", icon: SettingsIcon, roles: ["admin", "manager", "inventory", "cashier"], el: Settings },
+  { key: "help", label: "Help", icon: CircleHelp, roles: ["admin", "manager", "inventory", "cashier"], el: Help },
 ]
 
 function useClock() {

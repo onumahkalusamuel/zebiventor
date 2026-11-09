@@ -153,6 +153,8 @@ the hub's records, so they need the hub to be reachable. Selling stays offline-c
   price, and can be refunded as store credit, spent later at any till.
 - *Reports* read daily summaries kept alongside sales, so a year of a busy
   shop reports in milliseconds (`docs/LOADTEST.md`).
+- *Help:* a staff guide inside the app (left bar → Help), with the topics
+  for each person's role.
 - *Approval rules:* each manager-approval requirement (discount, price
   change, refund, paid out, no sale) can be switched off in Settings.
 
