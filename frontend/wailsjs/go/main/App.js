@@ -50,6 +50,10 @@ export function DiscoverHubs() {
   return window['go']['main']['App']['DiscoverHubs']();
 }
 
+export function GetDiagnostics() {
+  return window['go']['main']['App']['GetDiagnostics']();
+}
+
 export function GetPrinterConfig() {
   return window['go']['main']['App']['GetPrinterConfig']();
 }
@@ -114,6 +118,10 @@ export function LookupForReturn(arg1) {
   return window['go']['main']['App']['LookupForReturn'](arg1);
 }
 
+export function OpenDataFolder() {
+  return window['go']['main']['App']['OpenDataFolder']();
+}
+
 export function OpenDrawer(arg1) {
   return window['go']['main']['App']['OpenDrawer'](arg1);
 }
@@ -128,6 +136,10 @@ export function PaymentMethods() {
 
 export function PrintAccountPayment(arg1) {
   return window['go']['main']['App']['PrintAccountPayment'](arg1);
+}
+
+export function PrintDocument(arg1, arg2) {
+  return window['go']['main']['App']['PrintDocument'](arg1, arg2);
 }
 
 export function PrintReturn(arg1, arg2) {
@@ -176,6 +188,10 @@ export function SaveCategory(arg1) {
 
 export function SaveCustomer(arg1) {
   return window['go']['main']['App']['SaveCustomer'](arg1);
+}
+
+export function SaveDiagnostics() {
+  return window['go']['main']['App']['SaveDiagnostics']();
 }
 
 export function SavePaymentMethod(arg1) {
@@ -228,6 +244,10 @@ export function ShiftPreview(arg1) {
 
 export function SyncNow() {
   return window['go']['main']['App']['SyncNow']();
+}
+
+export function TestDrawer(arg1) {
+  return window['go']['main']['App']['TestDrawer'](arg1);
 }
 
 export function TestPreview(arg1) {

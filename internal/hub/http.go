@@ -212,6 +212,54 @@ func (h *Hub) backOfficeRoutes(mux *http.ServeMux) {
 		}
 	})
 
+	// Money owed to suppliers.
+	handle("GET /api/admin/bills", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListBills(r.Context(), s, qs(r, "supplier"), qs(r, "status"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/bills/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		b, pays, err := h.GetBill(r.Context(), s, r.PathValue("id"))
+		respond(w, map[string]any{"bill": b, "payments": pays}, err)
+	})
+	handle("POST /api/admin/bills", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.SupplierBillInput
+		if readJSON(w, r, &in) {
+			id, err := h.CreateBill(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("POST /api/admin/bills/{id}/void", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in struct {
+			Reason string `json:"reason"`
+		}
+		if readJSON(w, r, &in) {
+			respond(w, ok, h.VoidBill(r.Context(), s, r.PathValue("id"), in.Reason))
+		}
+	})
+	handle("GET /api/admin/supplier-payments", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.ListSupplierPayments(r.Context(), s, qs(r, "supplier"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/supplier-payments/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.GetSupplierPayment(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("POST /api/admin/supplier-payments", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.SupplierPaymentInput
+		if readJSON(w, r, &in) {
+			id, err := h.PaySupplier(r.Context(), s, in)
+			respond(w, map[string]string{"id": id}, err)
+		}
+	})
+	handle("GET /api/admin/suppliers/{id}/statement", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.SupplierStatement(r.Context(), s, r.PathValue("id"))
+		respond(w, v, err)
+	})
+	handle("GET /api/admin/reports/payables", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		v, err := h.PayablesReport(r.Context(), s)
+		respond(w, v, err)
+	})
+
 	// Locations, transfers, counts, ledger.
 	handle("GET /api/admin/locations", func(w http.ResponseWriter, r *http.Request, s *Session) {
 		v, err := h.ListLocations(r.Context(), s)
@@ -225,8 +273,17 @@ func (h *Hub) backOfficeRoutes(mux *http.ServeMux) {
 		}
 	})
 	handle("GET /api/admin/transfers", func(w http.ResponseWriter, r *http.Request, s *Session) {
-		v, err := h.ListTransfers(r.Context(), s)
+		v, err := h.ListTransfers(r.Context(), s, qs(r, "status"))
 		respond(w, v, err)
+	})
+	handle("POST /api/admin/transfers/{id}/receive", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		var in protocol.TransferReceipt
+		if readJSON(w, r, &in) {
+			respond(w, ok, h.ReceiveTransfer(r.Context(), s, r.PathValue("id"), in))
+		}
+	})
+	handle("POST /api/admin/transfers/{id}/cancel", func(w http.ResponseWriter, r *http.Request, s *Session) {
+		respond(w, ok, h.CancelTransfer(r.Context(), s, r.PathValue("id")))
 	})
 	handle("GET /api/admin/transfers/{id}", func(w http.ResponseWriter, r *http.Request, s *Session) {
 		v, err := h.GetTransfer(r.Context(), s, r.PathValue("id"))

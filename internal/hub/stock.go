@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/onumahkalusamuel/zebiventor/internal/ids"
@@ -82,15 +83,18 @@ func (h *Hub) SaveLocation(ctx context.Context, by *Session, l protocol.Location
 
 // ---------- transfers ----------
 
-// TransferInput moves stock between two locations in one step.
+// TransferInput sends stock from one location to another. Goods leave the
+// source at once and stay "in transit" until received at the destination,
+// unless ReceiveNow is set (both places in the same building).
 type TransferInput struct {
 	FromLocationID string                       `json:"from_location_id"`
 	ToLocationID   string                       `json:"to_location_id"`
 	Note           string                       `json:"note"`
+	ReceiveNow     bool                         `json:"receive_now"`
 	Lines          []protocol.StockTransferLine `json:"lines"`
 }
 
-// TransferStock moves goods from one location to another.
+// TransferStock sends goods from one location to another.
 func (h *Hub) TransferStock(ctx context.Context, by *Session, in TransferInput) (string, error) {
 	if !by.Can(catalogRoles...) {
 		return "", ErrForbidden
@@ -111,8 +115,12 @@ func (h *Hub) TransferStock(ctx context.Context, by *Session, in TransferInput) 
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfers(id,transfer_no,from_location_id,to_location_id,note,created_by,created_at) VALUES(?,?,?,?,?,?,?)`,
-			id, no, in.FromLocationID, in.ToLocationID, trim(in.Note), by.UserID, now); err != nil {
+		status, recvBy, recvAt := protocol.TransferInTransit, "", int64(0)
+		if in.ReceiveNow {
+			status, recvBy, recvAt = protocol.TransferReceived, by.UserID, now
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfers(id,transfer_no,from_location_id,to_location_id,note,created_by,created_at,status,received_by,received_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?)`, id, no, in.FromLocationID, in.ToLocationID, trim(in.Note), by.UserID, now, status, recvBy, recvAt); err != nil {
 			return err
 		}
 		seen := map[string]bool{}
@@ -131,42 +139,176 @@ func (h *Hub) TransferStock(ctx context.Context, by *Session, in TransferInput) 
 			if err := v.checkQty(l.QtyMilli); err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfer_lines(id,transfer_id,variant_id,qty_milli) VALUES(?,?,?,?)`, ids.New(), id, v.ID, l.QtyMilli); err != nil {
+			received := int64(0)
+			if in.ReceiveNow {
+				received = l.QtyMilli
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO stock_transfer_lines(id,transfer_id,variant_id,qty_milli,received_qty_milli) VALUES(?,?,?,?,?)`,
+				ids.New(), id, v.ID, l.QtyMilli, received); err != nil {
 				return err
 			}
-			base := stockMove{VariantID: v.ID, RefType: "transfer", RefID: id, UserID: by.UserID, CreatedAt: now}
-			out, into := base, base
-			out.LocationID, out.DeltaMilli, out.Reason = in.FromLocationID, -l.QtyMilli, "transfer_out"
-			into.LocationID, into.DeltaMilli, into.Reason = in.ToLocationID, l.QtyMilli, "transfer_in"
-			if err := addStock(ctx, tx, out); err != nil {
+			move := stockMove{VariantID: v.ID, LocationID: in.FromLocationID, DeltaMilli: -l.QtyMilli, Reason: "transfer_out",
+				RefType: "transfer", RefID: id, UserID: by.UserID, CreatedAt: now}
+			if err := addStock(ctx, tx, move); err != nil {
 				return err
 			}
-			if err := addStock(ctx, tx, into); err != nil {
+			if in.ReceiveNow {
+				move.LocationID, move.DeltaMilli, move.Reason = in.ToLocationID, l.QtyMilli, "transfer_in"
+				if err := addStock(ctx, tx, move); err != nil {
+					return err
+				}
+			}
+		}
+		audit(ctx, tx, by.UserID, "", "stock.transfer", "stock_transfer", id, map[string]any{"no": no, "lines": len(in.Lines), "status": status})
+		return nil
+	})
+}
+
+// ReceiveTransfer books an in-transit transfer in at its destination. Any
+// shortfall stays out of stock (it already left the source) and is noted.
+func (h *Hub) ReceiveTransfer(ctx context.Context, by *Session, id string, in protocol.TransferReceipt) error {
+	if !by.Can(catalogRoles...) {
+		return ErrForbidden
+	}
+	return h.write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		t, err := scanTransfer(tx.QueryRowContext(ctx, transferSelect+" WHERE t.id=?", id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return invalid("transfer not found")
+		}
+		if err != nil {
+			return err
+		}
+		if t.Status != protocol.TransferInTransit {
+			return invalid("%s has already been %s", t.TransferNo, strings.ReplaceAll(t.Status, "_", " "))
+		}
+		got := map[string]int64{}
+		for _, l := range in.Lines {
+			if l.ReceivedQtyMilli < 0 {
+				return invalid("received quantity cannot be negative")
+			}
+			got[l.VariantID] = l.ReceivedQtyMilli
+		}
+		rows, err := tx.QueryContext(ctx, "SELECT id,variant_id,qty_milli FROM stock_transfer_lines WHERE transfer_id=? ORDER BY rowid", id)
+		if err != nil {
+			return err
+		}
+		type line struct {
+			id, variant string
+			sent, recv  int64
+		}
+		var lines []line
+		for rows.Next() {
+			var l line
+			if err := rows.Scan(&l.id, &l.variant, &l.sent); err != nil {
+				rows.Close()
+				return err
+			}
+			l.recv = l.sent
+			if q, ok := got[l.variant]; ok {
+				l.recv = q
+			}
+			lines = append(lines, l)
+		}
+		rows.Close()
+		now := ids.NowMs()
+		var short int64
+		for _, l := range lines {
+			if l.recv > l.sent {
+				v, _ := loadVariant(ctx, tx, l.variant)
+				return invalid("more %s received than was sent", v.label())
+			}
+			if _, err := tx.ExecContext(ctx, "UPDATE stock_transfer_lines SET received_qty_milli=? WHERE id=?", l.recv, l.id); err != nil {
+				return err
+			}
+			short += l.sent - l.recv
+			if l.recv == 0 {
+				continue
+			}
+			if err := addStock(ctx, tx, stockMove{VariantID: l.variant, LocationID: t.ToLocationID, DeltaMilli: l.recv, Reason: "transfer_in",
+				RefType: "transfer", RefID: id, UserID: by.UserID, CreatedAt: now}); err != nil {
 				return err
 			}
 		}
-		audit(ctx, tx, by.UserID, "", "stock.transfer", "stock_transfer", id, map[string]any{"no": no, "lines": len(in.Lines)})
+		if _, err := tx.ExecContext(ctx, "UPDATE stock_transfers SET status=?,received_by=?,received_at=?,receive_note=? WHERE id=?",
+			protocol.TransferReceived, by.UserID, now, trim(in.Note), id); err != nil {
+			return err
+		}
+		audit(ctx, tx, by.UserID, "", "stock.transfer_receive", "stock_transfer", id, map[string]any{"no": t.TransferNo, "short_milli": short})
+		return nil
+	})
+}
+
+// CancelTransfer returns an in-transit transfer to where it came from.
+func (h *Hub) CancelTransfer(ctx context.Context, by *Session, id string) error {
+	if !by.Can(catalogRoles...) {
+		return ErrForbidden
+	}
+	return h.write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		t, err := scanTransfer(tx.QueryRowContext(ctx, transferSelect+" WHERE t.id=?", id))
+		if errors.Is(err, sql.ErrNoRows) {
+			return invalid("transfer not found")
+		}
+		if err != nil {
+			return err
+		}
+		if t.Status != protocol.TransferInTransit {
+			return invalid("only a transfer still in transit can be cancelled")
+		}
+		rows, err := tx.QueryContext(ctx, "SELECT variant_id,qty_milli FROM stock_transfer_lines WHERE transfer_id=?", id)
+		if err != nil {
+			return err
+		}
+		var moves []stockMove
+		now := ids.NowMs()
+		for rows.Next() {
+			m := stockMove{LocationID: t.FromLocationID, Reason: "transfer_in", RefType: "transfer", RefID: id, UserID: by.UserID,
+				Note: "transfer cancelled", CreatedAt: now}
+			if err := rows.Scan(&m.VariantID, &m.DeltaMilli); err != nil {
+				rows.Close()
+				return err
+			}
+			moves = append(moves, m)
+		}
+		rows.Close()
+		for _, m := range moves {
+			if err := addStock(ctx, tx, m); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE stock_transfers SET status=?,received_by=?,received_at=? WHERE id=?",
+			protocol.TransferCancelled, by.UserID, now, id); err != nil {
+			return err
+		}
+		audit(ctx, tx, by.UserID, "", "stock.transfer_cancel", "stock_transfer", id, map[string]any{"no": t.TransferNo})
 		return nil
 	})
 }
 
 const transferSelect = `SELECT t.id,t.transfer_no,t.from_location_id,COALESCE(lf.name,''),t.to_location_id,COALESCE(lt.name,''),t.note,
-	COALESCE(u.name,t.created_by),t.created_at,(SELECT COALESCE(sum(qty_milli),0) FROM stock_transfer_lines WHERE transfer_id=t.id)
+	COALESCE(u.name,t.created_by),t.created_at,(SELECT COALESCE(sum(qty_milli),0) FROM stock_transfer_lines WHERE transfer_id=t.id),
+	t.status,COALESCE(ru.name,t.received_by),t.received_at,t.receive_note,
+	(SELECT COALESCE(sum(l.qty_milli*v.cost_minor/1000),0) FROM stock_transfer_lines l JOIN variants v ON v.id=l.variant_id WHERE l.transfer_id=t.id)
 	FROM stock_transfers t LEFT JOIN locations lf ON lf.id=t.from_location_id LEFT JOIN locations lt ON lt.id=t.to_location_id
-	LEFT JOIN users u ON u.id=t.created_by`
+	LEFT JOIN users u ON u.id=t.created_by LEFT JOIN users ru ON ru.id=t.received_by`
 
 func scanTransfer(r interface{ Scan(...any) error }) (protocol.StockTransfer, error) {
 	var t protocol.StockTransfer
-	err := r.Scan(&t.ID, &t.TransferNo, &t.FromLocationID, &t.FromLocationName, &t.ToLocationID, &t.ToLocationName, &t.Note, &t.CreatedBy, &t.CreatedAt, &t.ItemsMilli)
+	err := r.Scan(&t.ID, &t.TransferNo, &t.FromLocationID, &t.FromLocationName, &t.ToLocationID, &t.ToLocationName, &t.Note, &t.CreatedBy,
+		&t.CreatedAt, &t.ItemsMilli, &t.Status, &t.ReceivedBy, &t.ReceivedAt, &t.ReceiveNote, &t.CostMinor)
 	return t, err
 }
 
-// ListTransfers lists stock transfers, newest first.
-func (h *Hub) ListTransfers(ctx context.Context, by *Session) ([]protocol.StockTransfer, error) {
+// ListTransfers lists stock transfers, newest first; status filters them.
+func (h *Hub) ListTransfers(ctx context.Context, by *Session, status string) ([]protocol.StockTransfer, error) {
 	if !by.Can(catalogRoles...) {
 		return nil, ErrForbidden
 	}
-	rows, err := h.db.R().QueryContext(ctx, transferSelect+" ORDER BY t.created_at DESC LIMIT 500")
+	q, args := transferSelect, []any{}
+	if status != "" {
+		q += " WHERE t.status=?"
+		args = append(args, status)
+	}
+	rows, err := h.db.R().QueryContext(ctx, q+" ORDER BY t.created_at DESC LIMIT 500", args...)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +336,8 @@ func (h *Hub) GetTransfer(ctx context.Context, by *Session, id string) (*protoco
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.db.R().QueryContext(ctx, `SELECT l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),l.qty_milli
+	rows, err := h.db.R().QueryContext(ctx, `SELECT l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),COALESCE(p.unit,''),
+		l.qty_milli,l.received_qty_milli,COALESCE(v.cost_minor,0)
 		FROM stock_transfer_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id WHERE l.transfer_id=? ORDER BY l.rowid`, t.ID)
 	if err != nil {
 		return nil, err
@@ -202,7 +345,7 @@ func (h *Hub) GetTransfer(ctx context.Context, by *Session, id string) (*protoco
 	defer rows.Close()
 	for rows.Next() {
 		var l protocol.StockTransferLine
-		if err := rows.Scan(&l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.QtyMilli); err != nil {
+		if err := rows.Scan(&l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.Unit, &l.QtyMilli, &l.ReceivedQtyMilli, &l.CostMinor); err != nil {
 			return nil, err
 		}
 		t.Lines = append(t.Lines, l)

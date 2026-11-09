@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ArrowRightLeft, ClipboardCheck, History, Loader2, MapPin, Plus, Search, Trash2, Warehouse, X } from "lucide-react"
+import { AlertTriangle, ArrowRightLeft, ClipboardCheck, History, Loader2, MapPin, PackageCheck, Plus, Search, Trash2, Warehouse, X } from "lucide-react"
 import { toast } from "sonner"
-import { Chips, ExportButton, HubRequired, ItemPicker, LocationSelect, QueryError, itemLabel, useLocations } from "@/components/backoffice"
+import { Chips, ExportButton, HubRequired, ItemPicker, LocationSelect, PrintButton, QueryError, itemLabel, useLocations } from "@/components/backoffice"
 import { EmptyState, Page, PageHeader, StatCard } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,7 @@ import { api, errorMessage } from "@/lib/api"
 import { formatDateTime, formatQty, parseQty } from "@/lib/format"
 import { csvMoney, hub, toCSV } from "@/lib/hub"
 import { useLoadedState, useMoney } from "@/lib/state"
-import type { LocationInfo, StockCount, StockCountLine, StockReportRow } from "@/lib/types"
+import type { LocationInfo, StockCount, StockCountLine, StockReportRow, StockTransfer } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 type Tab = "levels" | "counts" | "transfers" | "locations"
@@ -637,24 +637,56 @@ function PostCountDialog({ count, totals, onClose, onPosted }: { count: StockCou
 
 // ---------- transfers ----------
 
+function TransferBadge({ status }: { status: StockTransfer["status"] }) {
+  const s = {
+    in_transit: ["In transit", "border-amber-500/40 text-amber-700 dark:text-amber-400"],
+    received: ["Received", "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"],
+    cancelled: ["Cancelled", "text-muted-foreground"],
+  }[status]
+  return (
+    <Badge variant="outline" className={s[1]}>
+      {s[0]}
+    </Badge>
+  )
+}
+
 function TransfersTab() {
   const locs = useLocations()
+  const { fmt } = useMoney()
   const [creating, setCreating] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
-  const list = useQuery({ queryKey: ["bo", "transfers"], queryFn: hub.transfers })
-  const detail = useQuery({ queryKey: ["bo", "transfer", openId], queryFn: () => hub.transfer(openId!), enabled: !!openId })
+  const [filter, setFilter] = useState<"" | "in_transit">("")
+  const list = useQuery({ queryKey: ["bo", "transfers", filter], queryFn: () => hub.transfers(filter) })
+  const transit = useQuery({ queryKey: ["bo", "transfers", "in_transit"], queryFn: () => hub.transfers("in_transit") })
   const active = (locs.data ?? []).filter((l) => l.active)
   if (locs.data && active.length < 2) {
     return <EmptyState icon={<ArrowRightLeft />} title="Transfers need two locations" body="Add a store room or warehouse under Locations, then move stock between them here." />
   }
+  const inTransit = transit.data ?? []
+  const transitValue = inTransit.reduce((s, t) => s + t.cost_minor, 0)
   return (
     <>
-      <Button onClick={() => setCreating(true)}>
-        <ArrowRightLeft /> New transfer
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => setCreating(true)}>
+          <ArrowRightLeft /> New transfer
+        </Button>
+        <Chips
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "", label: "All" },
+            { value: "in_transit", label: `In transit${inTransit.length ? ` (${inTransit.length})` : ""}` },
+          ]}
+        />
+        {inTransit.length > 0 && (
+          <span className="text-sm text-muted-foreground">
+            {fmt(transitValue)} of stock on the way (at cost)
+          </span>
+        )}
+      </div>
       <QueryError error={list.error} />
       {list.data?.length === 0 ? (
-        <EmptyState icon={<ArrowRightLeft />} title="No transfers yet" />
+        <EmptyState icon={<ArrowRightLeft />} title={filter ? "Nothing in transit" : "No transfers yet"} />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
           <Table>
@@ -662,7 +694,8 @@ function TransfersTab() {
               <TableRow className="bg-muted/40">
                 <TableHead className="pl-4">Transfer</TableHead>
                 <TableHead>From → to</TableHead>
-                <TableHead>When</TableHead>
+                <TableHead>Sent</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Note</TableHead>
                 <TableHead className="pr-4 text-right">Units</TableHead>
               </TableRow>
@@ -677,7 +710,10 @@ function TransfersTab() {
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(t.created_at)} · {t.created_by}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{t.note}</TableCell>
+                  <TableCell>
+                    <TransferBadge status={t.status} />
+                  </TableCell>
+                  <TableCell className="max-w-56 truncate text-muted-foreground">{t.note}</TableCell>
                   <TableCell className="pr-4 text-right tabular">{formatQty(t.items_milli)}</TableCell>
                 </TableRow>
               ))}
@@ -685,52 +721,210 @@ function TransfersTab() {
           </Table>
         </div>
       )}
-      <Sheet open={!!openId} onOpenChange={(o) => !o && setOpenId(null)}>
-        <SheetContent className="w-[480px] gap-0 sm:max-w-[480px]">
-          <SheetHeader className="border-b">
-            <SheetTitle>Transfer {detail.data?.transfer_no}</SheetTitle>
-            <SheetDescription>{detail.data && `${detail.data.from_location_name} → ${detail.data.to_location_name} · ${formatDateTime(detail.data.created_at)}`}</SheetDescription>
-          </SheetHeader>
-          <div className="flex-1 overflow-y-auto">
-            <Table>
-              <TableBody>
-                {(detail.data?.lines ?? []).map((l) => (
+      <TransferSheet id={openId} onClose={() => setOpenId(null)} />
+      {creating && (
+        <TransferDialog
+          locations={active}
+          onClose={() => setCreating(false)}
+          onCreated={(id) => {
+            setCreating(false)
+            setOpenId(id)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function TransferSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+  const qc = useQueryClient()
+  const detail = useQuery({ queryKey: ["bo", "transfer", id], queryFn: () => hub.transfer(id!), enabled: !!id })
+  const t = detail.data
+  const [receiving, setReceiving] = useState(false)
+  const [got, setGot] = useState<Record<string, string>>({})
+  const [note, setNote] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  function close() {
+    setReceiving(false)
+    setConfirmCancel(false)
+    setNote("")
+    onClose()
+  }
+  function startReceive() {
+    setGot(Object.fromEntries((t?.lines ?? []).map((l) => [l.variant_id, formatQty(l.qty_milli)])))
+    setReceiving(true)
+  }
+  const parsed = Object.fromEntries(Object.entries(got).map(([k, v]) => [k, parseQty(v)]))
+  const lines = t?.lines ?? []
+  const bad = lines.some((l) => {
+    const q = parsed[l.variant_id]
+    return isNaN(q) || q < 0 || q > l.qty_milli
+  })
+  const short = lines.reduce((s, l) => s + Math.max(0, l.qty_milli - (parsed[l.variant_id] ?? l.qty_milli)), 0)
+  async function receive() {
+    if (!t) return
+    setBusy(true)
+    try {
+      await hub.receiveTransfer(t.id, { note, lines: lines.map((l) => ({ variant_id: l.variant_id, received_qty_milli: parsed[l.variant_id] })) })
+      toast.success(`${t.transfer_no} received at ${t.to_location_name}`)
+      setReceiving(false)
+      qc.invalidateQueries({ queryKey: ["bo"] })
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function cancel() {
+    if (!t) return
+    setBusy(true)
+    try {
+      await hub.cancelTransfer(t.id)
+      toast.success(`${t.transfer_no} cancelled; stock is back at ${t.from_location_name}`)
+      setConfirmCancel(false)
+      qc.invalidateQueries({ queryKey: ["bo"] })
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet open={!!id} onOpenChange={(o) => !o && close()}>
+      <SheetContent className="w-[560px] gap-0 sm:max-w-[560px]">
+        <SheetHeader className="border-b">
+          <SheetTitle className="flex items-center gap-2">
+            Transfer {t?.transfer_no} {t && <TransferBadge status={t.status} />}
+          </SheetTitle>
+          <SheetDescription>
+            {t && `${t.from_location_name} → ${t.to_location_name} · sent ${formatDateTime(t.created_at)} by ${t.created_by}`}
+            {t?.status === "received" && t.received_at > 0 && ` · received ${formatDateTime(t.received_at)} by ${t.received_by}`}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex-1 overflow-y-auto">
+          {t?.note && <p className="border-b px-4 py-3 text-sm text-muted-foreground">{t.note}</p>}
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40">
+                <TableHead className="pl-4">Item</TableHead>
+                <TableHead className="text-right">Sent</TableHead>
+                <TableHead className="pr-4 text-right">Received</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {lines.map((l) => {
+                const shortBy = t?.status === "received" ? l.qty_milli - l.received_qty_milli : 0
+                return (
                   <TableRow key={l.variant_id}>
                     <TableCell className="pl-4">
                       <div className="font-medium">{itemLabel(l)}</div>
                       <div className="text-xs text-muted-foreground">{l.sku}</div>
                     </TableCell>
-                    <TableCell className="pr-4 text-right tabular">{formatQty(l.qty_milli)}</TableCell>
+                    <TableCell className="text-right tabular">{formatQty(l.qty_milli)}</TableCell>
+                    <TableCell className="w-32 pr-4 text-right tabular">
+                      {receiving ? (
+                        <Input
+                          value={got[l.variant_id] ?? ""}
+                          onChange={(e) => setGot((g) => ({ ...g, [l.variant_id]: e.target.value }))}
+                          onFocus={(e) => e.target.select()}
+                          className={cn("h-9 text-right tabular", (isNaN(parsed[l.variant_id]) || parsed[l.variant_id] > l.qty_milli) && "border-destructive")}
+                        />
+                      ) : t?.status === "received" ? (
+                        <span className={cn(shortBy > 0 && "font-medium text-destructive")}>
+                          {formatQty(l.received_qty_milli)}
+                          {shortBy > 0 && <span className="block text-xs">{formatQty(shortBy)} short</span>}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                )
+              })}
+            </TableBody>
+          </Table>
+          {t?.receive_note && <p className="px-4 py-3 text-sm text-muted-foreground">On receipt: {t.receive_note}</p>}
+        </div>
+        {t && (
+          <div className="space-y-3 border-t p-4">
+            {receiving ? (
+              <>
+                {short > 0 && (
+                  <p className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="size-4" /> {formatQty(short)} short. The missing stock is written off; it has already left {t.from_location_name}.
+                  </p>
+                )}
+                <Input placeholder="Note (e.g. one carton damaged)" value={note} onChange={(e) => setNote(e.target.value)} className="h-10" />
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setReceiving(false)}>
+                    Back
+                  </Button>
+                  <Button onClick={receive} disabled={busy || bad}>
+                    {busy && <Loader2 className="animate-spin" />} Book in at {t.to_location_name}
+                  </Button>
+                </div>
+              </>
+            ) : confirmCancel ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm">Return all items to {t.from_location_name}?</span>
+                <div className="flex gap-2">
+                  <Button variant="ghost" onClick={() => setConfirmCancel(false)}>
+                    Keep
+                  </Button>
+                  <Button variant="destructive" onClick={cancel} disabled={busy}>
+                    {busy && <Loader2 className="animate-spin" />} Cancel transfer
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap justify-end gap-2">
+                <PrintButton kind="transfer" id={t.id} label="Transfer note" />
+                {t.status === "in_transit" && (
+                  <>
+                    <Button variant="outline" onClick={() => setConfirmCancel(true)}>
+                      <X /> Cancel
+                    </Button>
+                    <Button onClick={startReceive}>
+                      <PackageCheck /> Receive
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-        </SheetContent>
-      </Sheet>
-      {creating && <TransferDialog locations={active} onClose={() => setCreating(false)} />}
-    </>
+        )}
+      </SheetContent>
+    </Sheet>
   )
 }
 
-function TransferDialog({ locations, onClose }: { locations: LocationInfo[]; onClose: () => void }) {
+function TransferDialog({ locations, onClose, onCreated }: { locations: LocationInfo[]; onClose: () => void; onCreated: (id: string) => void }) {
   const state = useLoadedState()
   const qc = useQueryClient()
   const [from, setFrom] = useState(state.pairing.location_id)
   const [to, setTo] = useState(locations.find((l) => l.id !== state.pairing.location_id)?.id ?? "")
   const [note, setNote] = useState("")
+  const [now, setNow] = useState(false)
   const [lines, setLines] = useState<{ row: StockReportRow; qty: string }[]>([])
   const [busy, setBusy] = useState(false)
   const exclude = useMemo(() => new Set(lines.map((l) => l.row.variant_id)), [lines])
   const parsed = lines.map((l) => parseQty(l.qty))
-  const valid = from && to && from !== to && lines.length > 0 && parsed.every((q) => !isNaN(q))
+  const valid = from && to && from !== to && lines.length > 0 && parsed.every((q) => !isNaN(q) && q > 0)
+  const toName = locations.find((l) => l.id === to)?.name ?? "the destination"
   async function submit() {
     setBusy(true)
     try {
-      await hub.createTransfer({ from_location_id: from, to_location_id: to, note, lines: lines.map((l, i) => ({ variant_id: l.row.variant_id, qty_milli: parsed[i] })) })
-      toast.success("Stock moved")
+      const { id } = await hub.createTransfer({
+        from_location_id: from,
+        to_location_id: to,
+        note,
+        receive_now: now,
+        lines: lines.map((l, i) => ({ variant_id: l.row.variant_id, qty_milli: parsed[i] })),
+      })
+      toast.success(now ? "Stock moved" : `Sent. Receive it at ${toName} when it arrives.`)
       qc.invalidateQueries({ queryKey: ["bo"] })
-      onClose()
+      onCreated(id)
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -756,7 +950,9 @@ function TransferDialog({ locations, onClose }: { locations: LocationInfo[]; onC
       <DialogContent className="flex max-h-[90vh] flex-col sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Move stock between locations</DialogTitle>
-          <DialogDescription>Stock leaves one location and arrives at the other in one step.</DialogDescription>
+          <DialogDescription>
+            {now ? "Stock leaves one location and arrives at the other straight away." : `Stock leaves now and stays in transit until someone at ${toName} receives it.`}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -801,14 +997,20 @@ function TransferDialog({ locations, onClose }: { locations: LocationInfo[]; onC
         </div>
         <div className="space-y-1.5">
           <Label>Note</Label>
-          <Input value={note} onChange={(e) => setNote(e.target.value)} className="h-10" />
+          <Input value={note} onChange={(e) => setNote(e.target.value)} className="h-10" placeholder="e.g. driver, vehicle, reason" />
         </div>
+        <label className="flex items-center gap-3 text-sm">
+          <Switch checked={now} onCheckedChange={setNow} />
+          <span>
+            Arrives now <span className="text-muted-foreground">(both locations are in the same building)</span>
+          </span>
+        </label>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={!valid || busy}>
-            {busy && <Loader2 className="animate-spin" />} Move stock
+            {busy && <Loader2 className="animate-spin" />} {now ? "Move stock" : "Send"}
           </Button>
         </DialogFooter>
       </DialogContent>

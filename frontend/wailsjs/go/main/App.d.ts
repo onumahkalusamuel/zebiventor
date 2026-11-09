@@ -29,6 +29,8 @@ export function CurrentShift():Promise<protocol.Shift>;
 
 export function DiscoverHubs():Promise<Array<discovery.Hub>>;
 
+export function GetDiagnostics():Promise<main.Diagnostics>;
+
 export function GetPrinterConfig():Promise<main.PrinterConfig>;
 
 export function GetSale(arg1:string):Promise<protocol.Sale>;
@@ -61,6 +63,8 @@ export function LookupCode(arg1:string):Promise<terminal.Item>;
 
 export function LookupForReturn(arg1:string):Promise<terminal.ReturnableSale>;
 
+export function OpenDataFolder():Promise<void>;
+
 export function OpenDrawer(arg1:string):Promise<void>;
 
 export function OpenShift(arg1:number):Promise<protocol.Shift>;
@@ -68,6 +72,8 @@ export function OpenShift(arg1:number):Promise<protocol.Shift>;
 export function PaymentMethods():Promise<Array<protocol.PaymentMethod>>;
 
 export function PrintAccountPayment(arg1:string):Promise<void>;
+
+export function PrintDocument(arg1:string,arg2:string):Promise<string>;
 
 export function PrintReturn(arg1:string,arg2:boolean):Promise<void>;
 
@@ -92,6 +98,8 @@ export function RevokeTerminal(arg1:string):Promise<void>;
 export function SaveCategory(arg1:protocol.Category):Promise<string>;
 
 export function SaveCustomer(arg1:protocol.Customer):Promise<protocol.Customer>;
+
+export function SaveDiagnostics():Promise<string>;
 
 export function SavePaymentMethod(arg1:protocol.PaymentMethod):Promise<string>;
 
@@ -118,6 +126,8 @@ export function ShiftMovements(arg1:string):Promise<Array<protocol.CashMovement>
 export function ShiftPreview(arg1:string):Promise<string>;
 
 export function SyncNow():Promise<void>;
+
+export function TestDrawer(arg1:main.PrinterConfig):Promise<void>;
 
 export function TestPreview(arg1:main.PrinterConfig):Promise<string>;
 

@@ -497,8 +497,11 @@ export interface Supplier {
   address: string
   notes: string
   active: boolean
+  terms_days: number
   open_orders: number
   received_minor: number
+  balance_minor: number
+  overdue_minor: number
 }
 
 export type POStatus = "draft" | "ordered" | "partial" | "received" | "cancelled"
@@ -572,6 +575,8 @@ export interface GoodsReceipt {
   received_by: string
   created_at: number
   total_minor: number
+  bill_id: string
+  bill_no: string
   lines?: GoodsReceiptLine[]
 }
 
@@ -590,8 +595,13 @@ export interface StockTransferLine {
   product_name: string
   variant_name: string
   sku: string
+  unit: string
   qty_milli: number
+  received_qty_milli: number
+  cost_minor: number
 }
+
+export type TransferStatus = "in_transit" | "received" | "cancelled"
 
 export interface StockTransfer {
   id: string
@@ -604,6 +614,11 @@ export interface StockTransfer {
   created_by: string
   created_at: number
   items_milli: number
+  status: TransferStatus
+  received_by: string
+  received_at: number
+  receive_note: string
+  cost_minor: number
   lines?: StockTransferLine[]
 }
 
@@ -734,4 +749,124 @@ export interface ImportResult {
   errors: { row: number; message: string }[]
   columns: string[]
   new_categories: string[]
+}
+
+// ---------- money owed to suppliers ----------
+
+export type BillStatus = "open" | "paid" | "void"
+
+export interface SupplierBill {
+  id: string
+  bill_no: string
+  supplier_id: string
+  supplier_name: string
+  supplier_ref: string
+  grn_id: string
+  grn_no: string
+  bill_date: number
+  due_date: number
+  amount_minor: number
+  paid_minor: number
+  status: BillStatus
+  note: string
+  created_by: string
+  created_at: number
+}
+
+export interface SupplierBillInput {
+  supplier_id: string
+  supplier_ref: string
+  grn_id: string
+  bill_date: number
+  due_date: number
+  amount_minor: number
+  note: string
+}
+
+export interface SupplierAllocation {
+  bill_id: string
+  bill_no: string
+  supplier_ref: string
+  amount_minor: number
+}
+
+export interface SupplierPayment {
+  id: string
+  payment_no: string
+  supplier_id: string
+  supplier_name: string
+  method: string
+  reference: string
+  amount_minor: number
+  paid_at: number
+  note: string
+  created_by: string
+  created_at: number
+  allocations?: SupplierAllocation[]
+}
+
+export interface SupplierPaymentInput {
+  supplier_id: string
+  method: string
+  reference: string
+  amount_minor: number
+  paid_at: number
+  note: string
+  bill_ids: string[]
+}
+
+export interface SupplierLedgerEntry {
+  id: string
+  at: number
+  kind: "opening" | "bill" | "payment" | "void" | "adjustment"
+  ref_id: string
+  ref_no: string
+  amount_minor: number
+  balance_minor: number
+  note: string
+  user_name: string
+}
+
+export interface SupplierStatement {
+  supplier: Supplier
+  entries: SupplierLedgerEntry[]
+  open_bills: SupplierBill[]
+}
+
+export interface PayablesRow {
+  supplier_id: string
+  supplier_name: string
+  not_due_minor: number
+  days_1_30_minor: number
+  days_31_60_minor: number
+  days_61_90_minor: number
+  over_90_minor: number
+  total_minor: number
+  credit_minor: number
+}
+
+export interface PayablesReport {
+  as_of: number
+  rows: PayablesRow[]
+  totals: PayablesRow
+}
+
+export type DocumentKind = "purchase_order" | "transfer" | "supplier_statement" | "payment_advice"
+
+export interface Diagnostics {
+  version: string
+  os: string
+  mode: string
+  data_dir: string
+  log_file: string
+  terminal: string
+  hub_url: string
+  hub_running: boolean
+  hub_error: string
+  sync: SyncStatus
+  printer: PrinterConfig
+  printers: string[] | null
+  printers_error: string
+  database_bytes: Record<string, number>
+  time: string
 }

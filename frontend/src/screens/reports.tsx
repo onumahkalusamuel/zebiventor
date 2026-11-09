@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { BarChart3, Loader2, ScrollText, Wallet } from "lucide-react"
+import { BarChart3, Loader2, ReceiptText, ScrollText, Wallet } from "lucide-react"
 import { Chips, ExportButton, HubRequired, PeriodPicker, QueryError, usePeriod } from "@/components/backoffice"
 import { EmptyState, Page, PageHeader, StatCard } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
@@ -10,10 +10,10 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { formatDateTime, formatQty } from "@/lib/format"
 import { csvMoney, hub, toCSV } from "@/lib/hub"
 import { useMoney } from "@/lib/state"
-import type { SalesGroup, SalesReport, SalesReportRow } from "@/lib/types"
+import type { PayablesRow, SalesGroup, SalesReport, SalesReportRow } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-type Tab = "sales" | "shifts" | "activity"
+type Tab = "sales" | "shifts" | "payables" | "activity"
 
 export function Reports() {
   const [tab, setTab] = useState<Tab>("sales")
@@ -29,11 +29,13 @@ export function Reports() {
             options={[
               { value: "sales", label: "Sales & profit" },
               { value: "shifts", label: "Shifts & cash" },
+              { value: "payables", label: "Owed to suppliers" },
               { value: "activity", label: "Activity log" },
             ]}
           />
           {tab === "sales" && <SalesTab from={period.from} to={period.to} />}
           {tab === "shifts" && <ShiftsTab from={period.from} to={period.to} />}
+          {tab === "payables" && <PayablesTab />}
           {tab === "activity" && <ActivityTab from={period.from} to={period.to} />}
         </div>
       </HubRequired>
@@ -372,6 +374,11 @@ const actionLabels: Record<string, string> = {
   "settings.update": "Store settings changed",
   "customer.balance_adjust": "Customer balance adjusted",
   "catalogue.import": "Catalogue imported",
+  "stock.transfer_receive": "Transfer received",
+  "stock.transfer_cancel": "Transfer cancelled",
+  "supplier.bill": "Supplier bill recorded",
+  "supplier.bill_void": "Supplier bill voided",
+  "supplier.payment": "Supplier paid",
 }
 
 /** Turns an audit entry's JSON details into "key: value · …" with money and quantities formatted. */
@@ -436,6 +443,98 @@ function ActivityTab({ from, to }: { from: number; to: number }) {
                 </TableRow>
               ))}
             </TableBody>
+          </Table>
+        </div>
+      )}
+    </>
+  )
+}
+
+const ageing: { key: keyof PayablesRow; label: string }[] = [
+  { key: "not_due_minor", label: "Not yet due" },
+  { key: "days_1_30_minor", label: "1–30 days late" },
+  { key: "days_31_60_minor", label: "31–60" },
+  { key: "days_61_90_minor", label: "61–90" },
+  { key: "over_90_minor", label: "Over 90" },
+]
+
+/** Unpaid supplier bills by how late they are. Always as of today. */
+function PayablesTab() {
+  const { fmt, currency } = useMoney()
+  const rep = useQuery({ queryKey: ["bo", "payables"], queryFn: hub.payables })
+  const r = rep.data
+  const t = r?.totals
+  const overdue = t ? t.days_1_30_minor + t.days_31_60_minor + t.days_61_90_minor + t.over_90_minor : 0
+  const cell = (row: PayablesRow, k: keyof PayablesRow) => {
+    const v = row[k] as number
+    return v ? fmt(v) : <span className="text-muted-foreground">–</span>
+  }
+  return (
+    <>
+      <QueryError error={rep.error} />
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="Owed to suppliers" value={fmt(t?.total_minor ?? 0)} sub="unpaid bills, as of today" />
+        <StatCard label="Overdue" value={<span className={cn(overdue > 0 && "text-destructive")}>{fmt(overdue)}</span>} sub={t?.total_minor ? `${pct(overdue, t.total_minor)} of what is owed` : undefined} />
+        <StatCard label="Credit with suppliers" value={fmt(t?.credit_minor ?? 0)} sub="paid ahead, not yet billed" />
+      </div>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">The period picker does not apply here: this is what is owed today. Record bills and payments under Purchasing.</p>
+        <ExportButton
+          name="owed-to-suppliers.csv"
+          disabled={!r?.rows.length}
+          build={() =>
+            toCSV(
+              ["Supplier", ...ageing.map((a) => a.label), "Total owed", "Credit"],
+              (r?.rows ?? []).map((x) => [x.supplier_name, ...ageing.map((a) => csvMoney(x[a.key] as number, currency.digits)), csvMoney(x.total_minor, currency.digits), csvMoney(x.credit_minor, currency.digits)]),
+            )
+          }
+        />
+      </div>
+      {r && r.rows.length === 0 ? (
+        <EmptyState icon={<ReceiptText />} title="Nothing owed to suppliers" />
+      ) : (
+        <div className="overflow-hidden rounded-xl border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/40">
+                <TableHead className="pl-4">Supplier</TableHead>
+                {ageing.map((a) => (
+                  <TableHead key={a.key} className="text-right">
+                    {a.label}
+                  </TableHead>
+                ))}
+                <TableHead className="text-right">Total owed</TableHead>
+                <TableHead className="pr-4 text-right">Credit</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(r?.rows ?? []).map((x) => (
+                <TableRow key={x.supplier_id}>
+                  <TableCell className="pl-4 font-medium">{x.supplier_name}</TableCell>
+                  {ageing.map((a, i) => (
+                    <TableCell key={a.key} className={cn("text-right tabular", i > 0 && (x[a.key] as number) > 0 && "text-destructive")}>
+                      {cell(x, a.key)}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right font-medium tabular">{cell(x, "total_minor")}</TableCell>
+                  <TableCell className="pr-4 text-right tabular">{cell(x, "credit_minor")}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+            {t && (r?.rows.length ?? 0) > 1 && (
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="pl-4 font-semibold">Total</TableCell>
+                  {ageing.map((a) => (
+                    <TableCell key={a.key} className="text-right font-semibold tabular">
+                      {cell(t, a.key)}
+                    </TableCell>
+                  ))}
+                  <TableCell className="text-right font-semibold tabular">{cell(t, "total_minor")}</TableCell>
+                  <TableCell className="pr-4 text-right font-semibold tabular">{cell(t, "credit_minor")}</TableCell>
+                </TableRow>
+              </TableFooter>
+            )}
           </Table>
         </div>
       )}

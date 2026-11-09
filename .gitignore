@@ -8,3 +8,4 @@ frontend/dist
 .DS_Store
 /zebiventor
 /zebiventor.exe
+build/windows/installer/tmp

@@ -46,6 +46,12 @@ export function formatDateTime(ms: number): string {
   return new Date(ms).toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
 }
 
+/** A calendar date, e.g. "09 Nov 2026". */
+export function formatDate(ms: number): string {
+  if (!ms) return ""
+  return new Date(ms).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })
+}
+
 export const roleLabel: Record<Role, string> = {
   admin: "Administrator",
   manager: "Manager",

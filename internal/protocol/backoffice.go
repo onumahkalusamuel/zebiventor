@@ -12,9 +12,12 @@ type Supplier struct {
 	Address     string `json:"address"`
 	Notes       string `json:"notes"`
 	Active      bool   `json:"active"`
+	TermsDays   int64  `json:"terms_days"` // days to pay a bill; 0 = on receipt
 	// Read-only aggregates.
 	OpenOrders    int64 `json:"open_orders"`
 	ReceivedMinor int64 `json:"received_minor"` // value of all goods received
+	BalanceMinor  int64 `json:"balance_minor"`  // what we owe them
+	OverdueMinor  int64 `json:"overdue_minor"`  // unpaid on bills past due
 }
 
 // Purchase order statuses.
@@ -84,6 +87,8 @@ type GoodsReceipt struct {
 	ReceivedBy   string             `json:"received_by"`
 	CreatedAt    int64              `json:"created_at"`
 	TotalMinor   int64              `json:"total_minor"`
+	BillID       string             `json:"bill_id"` // supplier bill recorded for it
+	BillNo       string             `json:"bill_no"`
 	Lines        []GoodsReceiptLine `json:"lines,omitempty"`
 }
 
@@ -124,15 +129,37 @@ type StockTransfer struct {
 	CreatedBy        string              `json:"created_by"`
 	CreatedAt        int64               `json:"created_at"`
 	ItemsMilli       int64               `json:"items_milli"`
+	Status           string              `json:"status"`
+	ReceivedBy       string              `json:"received_by"`
+	ReceivedAt       int64               `json:"received_at"`
+	ReceiveNote      string              `json:"receive_note"`
+	CostMinor        int64               `json:"cost_minor"` // value sent, at current cost
 	Lines            []StockTransferLine `json:"lines,omitempty"`
 }
 
+// Transfer statuses.
+const (
+	TransferInTransit = "in_transit"
+	TransferReceived  = "received"
+	TransferCancelled = "cancelled"
+)
+
 type StockTransferLine struct {
-	VariantID   string `json:"variant_id"`
-	ProductName string `json:"product_name"`
-	VariantName string `json:"variant_name"`
-	SKU         string `json:"sku"`
-	QtyMilli    int64  `json:"qty_milli"`
+	VariantID        string `json:"variant_id"`
+	ProductName      string `json:"product_name"`
+	VariantName      string `json:"variant_name"`
+	SKU              string `json:"sku"`
+	Unit             string `json:"unit"`
+	QtyMilli         int64  `json:"qty_milli"`
+	ReceivedQtyMilli int64  `json:"received_qty_milli"`
+	CostMinor        int64  `json:"cost_minor"` // unit cost
+}
+
+// TransferReceipt books an in-transit transfer in at its destination. Lines
+// omitted are taken as fully received; a shortfall is written off.
+type TransferReceipt struct {
+	Note  string              `json:"note"`
+	Lines []StockTransferLine `json:"lines"`
 }
 
 // Stock count statuses.
@@ -320,4 +347,115 @@ type ImportResult struct {
 type ImportError struct {
 	Row     int    `json:"row"`
 	Message string `json:"message"`
+}
+
+// ---------- money owed to suppliers ----------
+
+// Supplier bill statuses.
+const (
+	BillOpen = "open"
+	BillPaid = "paid"
+	BillVoid = "void"
+)
+
+type SupplierBill struct {
+	ID           string `json:"id"`
+	BillNo       string `json:"bill_no"`
+	SupplierID   string `json:"supplier_id"`
+	SupplierName string `json:"supplier_name"`
+	SupplierRef  string `json:"supplier_ref"` // their invoice number
+	GRNID        string `json:"grn_id"`
+	GRNNo        string `json:"grn_no"`
+	BillDate     int64  `json:"bill_date"`
+	DueDate      int64  `json:"due_date"`
+	AmountMinor  int64  `json:"amount_minor"`
+	PaidMinor    int64  `json:"paid_minor"`
+	Status       string `json:"status"`
+	Note         string `json:"note"`
+	CreatedBy    string `json:"created_by"`
+	CreatedAt    int64  `json:"created_at"`
+}
+
+// SupplierBillInput records a supplier's invoice. When GRNID is set and
+// AmountMinor is 0, the delivery's value is used.
+type SupplierBillInput struct {
+	SupplierID  string `json:"supplier_id"`
+	SupplierRef string `json:"supplier_ref"`
+	GRNID       string `json:"grn_id"`
+	BillDate    int64  `json:"bill_date"`
+	DueDate     int64  `json:"due_date"` // 0 = bill date + supplier terms
+	AmountMinor int64  `json:"amount_minor"`
+	Note        string `json:"note"`
+}
+
+type SupplierPayment struct {
+	ID           string               `json:"id"`
+	PaymentNo    string               `json:"payment_no"`
+	SupplierID   string               `json:"supplier_id"`
+	SupplierName string               `json:"supplier_name"`
+	Method       string               `json:"method"`
+	Reference    string               `json:"reference"`
+	AmountMinor  int64                `json:"amount_minor"`
+	PaidAt       int64                `json:"paid_at"`
+	Note         string               `json:"note"`
+	CreatedBy    string               `json:"created_by"`
+	CreatedAt    int64                `json:"created_at"`
+	Allocations  []SupplierAllocation `json:"allocations,omitempty"`
+}
+
+type SupplierAllocation struct {
+	BillID      string `json:"bill_id"`
+	BillNo      string `json:"bill_no"`
+	SupplierRef string `json:"supplier_ref"`
+	AmountMinor int64  `json:"amount_minor"`
+}
+
+// SupplierPaymentInput pays a supplier. With BillIDs the money goes to those
+// bills first (in the order given); anything left goes to the oldest open
+// bills, and any remainder stays as credit with the supplier.
+type SupplierPaymentInput struct {
+	SupplierID  string   `json:"supplier_id"`
+	Method      string   `json:"method"`
+	Reference   string   `json:"reference"`
+	AmountMinor int64    `json:"amount_minor"`
+	PaidAt      int64    `json:"paid_at"`
+	Note        string   `json:"note"`
+	BillIDs     []string `json:"bill_ids"`
+}
+
+type SupplierLedgerEntry struct {
+	ID           string `json:"id"`
+	At           int64  `json:"at"`
+	Kind         string `json:"kind"`
+	RefID        string `json:"ref_id"`
+	RefNo        string `json:"ref_no"`
+	AmountMinor  int64  `json:"amount_minor"`
+	BalanceMinor int64  `json:"balance_minor"`
+	Note         string `json:"note"`
+	UserName     string `json:"user_name"`
+}
+
+type SupplierStatement struct {
+	Supplier Supplier              `json:"supplier"`
+	Entries  []SupplierLedgerEntry `json:"entries"`
+	Bills    []SupplierBill        `json:"open_bills"`
+}
+
+// PayablesRow is one supplier's unpaid bills split by how overdue they are.
+type PayablesRow struct {
+	SupplierID   string `json:"supplier_id"`
+	SupplierName string `json:"supplier_name"`
+	NotDueMinor  int64  `json:"not_due_minor"`
+	Days1To30    int64  `json:"days_1_30_minor"`
+	Days31To60   int64  `json:"days_31_60_minor"`
+	Days61To90   int64  `json:"days_61_90_minor"`
+	Over90Minor  int64  `json:"over_90_minor"`
+	TotalMinor   int64  `json:"total_minor"`
+	CreditMinor  int64  `json:"credit_minor"` // unallocated payments
+}
+
+type PayablesReport struct {
+	AsOf   int64         `json:"as_of"`
+	Rows   []PayablesRow `json:"rows"`
+	Totals PayablesRow   `json:"totals"`
 }

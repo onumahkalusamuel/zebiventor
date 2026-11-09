@@ -33,13 +33,32 @@ export const hub = {
   receipt: (id: string) => call<T.GoodsReceipt>("GET", "/api/admin/receipts/" + encodeURIComponent(id)),
   receiveGoods: (r: T.GoodsReceiptInput) => call<Id>("POST", "/api/admin/receipts", r),
 
+  bills: (supplier = "", status = "") => call<T.SupplierBill[]>("GET", "/api/admin/bills" + qs({ supplier, status })),
+  bill: (id: string) =>
+    call<{ bill: T.SupplierBill; payments: T.SupplierPayment[] }>("GET", "/api/admin/bills/" + encodeURIComponent(id)),
+  createBill: (b: T.SupplierBillInput) => call<Id>("POST", "/api/admin/bills", b),
+  voidBill: (id: string, reason: string) => call<void>("POST", `/api/admin/bills/${id}/void`, { reason }),
+  supplierPayments: (supplier = "") => call<T.SupplierPayment[]>("GET", "/api/admin/supplier-payments" + qs({ supplier })),
+  supplierPayment: (id: string) => call<T.SupplierPayment>("GET", "/api/admin/supplier-payments/" + encodeURIComponent(id)),
+  paySupplier: (p: T.SupplierPaymentInput) => call<Id>("POST", "/api/admin/supplier-payments", p),
+  supplierStatement: (id: string) => call<T.SupplierStatement>("GET", `/api/admin/suppliers/${id}/statement`),
+  payables: () => call<T.PayablesReport>("GET", "/api/admin/reports/payables"),
+
   locations: () => call<T.LocationInfo[]>("GET", "/api/admin/locations"),
   saveLocation: (l: Partial<T.Location>) => call<Id>("POST", "/api/admin/locations", l),
 
-  transfers: () => call<T.StockTransfer[]>("GET", "/api/admin/transfers"),
+  transfers: (status = "") => call<T.StockTransfer[]>("GET", "/api/admin/transfers" + qs({ status })),
   transfer: (id: string) => call<T.StockTransfer>("GET", "/api/admin/transfers/" + encodeURIComponent(id)),
-  createTransfer: (t: { from_location_id: string; to_location_id: string; note: string; lines: { variant_id: string; qty_milli: number }[] }) =>
-    call<Id>("POST", "/api/admin/transfers", t),
+  createTransfer: (t: {
+    from_location_id: string
+    to_location_id: string
+    note: string
+    receive_now: boolean
+    lines: { variant_id: string; qty_milli: number }[]
+  }) => call<Id>("POST", "/api/admin/transfers", t),
+  receiveTransfer: (id: string, r: { note: string; lines: { variant_id: string; received_qty_milli: number }[] }) =>
+    call<void>("POST", `/api/admin/transfers/${id}/receive`, r),
+  cancelTransfer: (id: string) => call<void>("POST", `/api/admin/transfers/${id}/cancel`, {}),
 
   counts: () => call<T.StockCount[]>("GET", "/api/admin/counts"),
   count: (id: string) => call<T.StockCount>("GET", "/api/admin/counts/" + encodeURIComponent(id)),

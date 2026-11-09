@@ -16,10 +16,12 @@ func (h *Hub) ListSuppliers(ctx context.Context, by *Session) ([]protocol.Suppli
 	if !by.Can(catalogRoles...) {
 		return nil, ErrForbidden
 	}
-	rows, err := h.db.R().QueryContext(ctx, `SELECT s.id,s.name,s.contact_name,s.phone,s.email,s.address,s.notes,s.active,
+	rows, err := h.db.R().QueryContext(ctx, `SELECT s.id,s.name,s.contact_name,s.phone,s.email,s.address,s.notes,s.active,s.terms_days,
 		(SELECT count(*) FROM purchase_orders o WHERE o.supplier_id=s.id AND o.status IN ('ordered','partial')),
-		(SELECT COALESCE(sum(total_minor),0) FROM goods_receipts g WHERE g.supplier_id=s.id)
-		FROM suppliers s ORDER BY s.active DESC, s.name COLLATE NOCASE`)
+		(SELECT COALESCE(sum(total_minor),0) FROM goods_receipts g WHERE g.supplier_id=s.id),
+		s.balance_minor,
+		(SELECT COALESCE(sum(amount_minor-paid_minor),0) FROM supplier_bills b WHERE b.supplier_id=s.id AND b.status='open' AND b.due_date<?)
+		FROM suppliers s ORDER BY s.active DESC, s.name COLLATE NOCASE`, startOfToday())
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +29,8 @@ func (h *Hub) ListSuppliers(ctx context.Context, by *Session) ([]protocol.Suppli
 	out := []protocol.Supplier{}
 	for rows.Next() {
 		var s protocol.Supplier
-		if err := rows.Scan(&s.ID, &s.Name, &s.ContactName, &s.Phone, &s.Email, &s.Address, &s.Notes, &s.Active, &s.OpenOrders, &s.ReceivedMinor); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ContactName, &s.Phone, &s.Email, &s.Address, &s.Notes, &s.Active, &s.TermsDays, &s.OpenOrders, &s.ReceivedMinor,
+			&s.BalanceMinor, &s.OverdueMinor); err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -44,6 +47,9 @@ func (h *Hub) SaveSupplier(ctx context.Context, by *Session, s protocol.Supplier
 	if s.Name == "" {
 		return "", invalid("supplier name is required")
 	}
+	if s.TermsDays < 0 || s.TermsDays > 365 {
+		return "", invalid("payment terms must be between 0 and 365 days")
+	}
 	if s.ID == "" {
 		s.ID, s.Active = ids.New(), true
 	}
@@ -54,10 +60,10 @@ func (h *Hub) SaveSupplier(ctx context.Context, by *Session, s protocol.Supplier
 		if clash != "" {
 			return invalid("a supplier called %q already exists", s.Name)
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO suppliers(id,name,contact_name,phone,email,address,notes,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)
+		_, err := tx.ExecContext(ctx, `INSERT INTO suppliers(id,name,contact_name,phone,email,address,notes,active,terms_days,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET name=excluded.name, contact_name=excluded.contact_name, phone=excluded.phone, email=excluded.email,
-			address=excluded.address, notes=excluded.notes, active=excluded.active, updated_at=excluded.updated_at`,
-			s.ID, s.Name, trim(s.ContactName), trim(s.Phone), trim(s.Email), trim(s.Address), trim(s.Notes), s.Active, now, now)
+			address=excluded.address, notes=excluded.notes, active=excluded.active, terms_days=excluded.terms_days, updated_at=excluded.updated_at`,
+			s.ID, s.Name, trim(s.ContactName), trim(s.Phone), trim(s.Email), trim(s.Address), trim(s.Notes), s.Active, s.TermsDays, now, now)
 		return err
 	})
 }
@@ -273,8 +279,8 @@ func (h *Hub) SetPurchaseOrderStatus(ctx context.Context, by *Session, id, statu
 
 func (h *Hub) listReceipts(ctx context.Context, where string, args ...any) ([]protocol.GoodsReceipt, error) {
 	rows, err := h.db.R().QueryContext(ctx, `SELECT g.id,g.grn_no,g.po_id,COALESCE(o.po_no,''),g.supplier_id,COALESCE(s.name,''),g.location_id,COALESCE(l.name,''),
-		g.supplier_ref,g.note,COALESCE(u.name,g.received_by),g.created_at,g.total_minor
-		FROM goods_receipts g LEFT JOIN purchase_orders o ON o.id=g.po_id LEFT JOIN suppliers s ON s.id=g.supplier_id
+		g.supplier_ref,g.note,COALESCE(u.name,g.received_by),g.created_at,g.total_minor,COALESCE(b.id,''),COALESCE(b.bill_no,'')
+		FROM goods_receipts g LEFT JOIN supplier_bills b ON b.grn_id=g.id AND b.status<>'void'  LEFT JOIN purchase_orders o ON o.id=g.po_id LEFT JOIN suppliers s ON s.id=g.supplier_id
 		LEFT JOIN locations l ON l.id=g.location_id LEFT JOIN users u ON u.id=g.received_by
 		WHERE `+where+` ORDER BY g.created_at DESC LIMIT 500`, args...)
 	if err != nil {
@@ -285,7 +291,7 @@ func (h *Hub) listReceipts(ctx context.Context, where string, args ...any) ([]pr
 	for rows.Next() {
 		var g protocol.GoodsReceipt
 		if err := rows.Scan(&g.ID, &g.GRNNo, &g.POID, &g.PONo, &g.SupplierID, &g.SupplierName, &g.LocationID, &g.LocationName,
-			&g.SupplierRef, &g.Note, &g.ReceivedBy, &g.CreatedAt, &g.TotalMinor); err != nil {
+			&g.SupplierRef, &g.Note, &g.ReceivedBy, &g.CreatedAt, &g.TotalMinor, &g.BillID, &g.BillNo); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -318,7 +324,7 @@ func (h *Hub) GetGoodsReceipt(ctx context.Context, by *Session, id string) (*pro
 	}
 	g := list[0]
 	rows, err := h.db.R().QueryContext(ctx, `SELECT l.id,l.po_line_id,l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),l.qty_milli,l.unit_cost_minor,l.total_minor
-		FROM goods_receipt_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id WHERE l.grn_id=? ORDER BY rowid`, g.ID)
+		FROM goods_receipt_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id WHERE l.grn_id=? ORDER BY l.rowid`, g.ID)
 	if err != nil {
 		return nil, err
 	}

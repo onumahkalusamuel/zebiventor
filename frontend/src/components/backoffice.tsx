@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CloudOff, Download, Loader2, Search } from "lucide-react"
+import { CloudOff, Download, Loader2, Printer, Search } from "lucide-react"
 import { toast } from "sonner"
 import { EmptyState } from "@/components/page"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { api, errorMessage } from "@/lib/api"
 import { formatQty } from "@/lib/format"
 import { hub } from "@/lib/hub"
 import { useLoadedState, useMoney } from "@/lib/state"
-import type { StockReportRow } from "@/lib/types"
+import type { DocumentKind, StockReportRow } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 /** Back-office screens work on the hub's records, so they need it online. */
@@ -301,5 +301,32 @@ export function Chips<T extends string>({ value, onChange, options }: { value: T
         </button>
       ))}
     </div>
+  )
+}
+
+/** Opens an A4 document in the browser to print or save as PDF. */
+export async function printDocument(kind: DocumentKind, id: string) {
+  try {
+    await api.printDocument(kind, id)
+    toast.success("Opened in your browser", { description: "Print it, or choose “Save as PDF” to email it." })
+  } catch (e) {
+    toast.error(errorMessage(e))
+  }
+}
+
+export function PrintButton({ kind, id, label = "Print", variant = "outline" }: { kind: DocumentKind; id: string; label?: string; variant?: "outline" | "ghost" }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <Button
+      variant={variant}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        await printDocument(kind, id)
+        setBusy(false)
+      }}
+    >
+      {busy ? <Loader2 className="animate-spin" /> : <Printer />} {label}
+    </Button>
   )
 }

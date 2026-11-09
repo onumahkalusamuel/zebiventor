@@ -171,7 +171,7 @@ func TestBackOffice(t *testing.T) {
 	// ---- Transfer 5 to a new warehouse.
 	var wh struct{ ID string }
 	must(tm.Admin(ctx, http.MethodPost, "/api/admin/locations", protocol.Location{Name: "Warehouse"}, &wh))
-	_, err = h.TransferStock(ctx, sys, hub.TransferInput{FromLocationID: mainLoc, ToLocationID: wh.ID, Lines: []protocol.StockTransferLine{{VariantID: pen, QtyMilli: 5_000}}})
+	_, err = h.TransferStock(ctx, sys, hub.TransferInput{FromLocationID: mainLoc, ToLocationID: wh.ID, ReceiveNow: true, Lines: []protocol.StockTransferLine{{VariantID: pen, QtyMilli: 5_000}}})
 	must(err)
 	if a, b := hubStock(mainLoc), hubStock(wh.ID); a != 22_000 || b != 5_000 {
 		t.Fatalf("after transfer main=%d warehouse=%d", a, b)

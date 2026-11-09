@@ -80,8 +80,9 @@ func main() {
 }
 
 func openHub(dir string) (*hub.Hub, error) {
-	return hub.Open(context.Background(), hub.Config{DataDir: dir, Version: appdata.Version,
-		Logger: slog.New(slog.NewTextHandler(os.Stderr, nil))})
+	log, _ := appdata.NewLogger(dir, "zebihub.log", os.Stderr)
+	slog.SetDefault(log)
+	return hub.Open(context.Background(), hub.Config{DataDir: dir, Version: appdata.Version, Logger: log})
 }
 
 // ---------- run ----------

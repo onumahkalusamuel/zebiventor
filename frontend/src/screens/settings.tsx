@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Banknote, Loader2, Plus, Printer, RefreshCw, Save, Server } from "lucide-react"
+import { Banknote, FolderOpen, LifeBuoy, Loader2, Plus, Printer, RefreshCw, Save, Server } from "lucide-react"
 import { toast } from "sonner"
 import { Page, PageHeader } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
@@ -85,7 +85,7 @@ function PrinterSettings() {
   const printers = useQuery({ queryKey: ["printers"], queryFn: api.listPrinters })
   const [c, setC] = useState<PrinterConfig | null>(null)
   const [preview, setPreview] = useState("")
-  const [busy, setBusy] = useState<"" | "save" | "test">("")
+  const [busy, setBusy] = useState<"" | "save" | "test" | "drawer">("")
 
   useEffect(() => {
     if (loaded.data && !c) setC(loaded.data)
@@ -105,6 +105,17 @@ function PrinterSettings() {
     try {
       await api.savePrinterConfig(c!)
       toast.success("Printer settings saved")
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy("")
+    }
+  }
+  async function drawer() {
+    setBusy("drawer")
+    try {
+      await api.testDrawer(c!)
+      toast.success("Drawer signal sent", { description: "If it didn't open, check the drawer cable goes into the printer's DK port." })
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {
@@ -219,6 +230,9 @@ function PrinterSettings() {
           </Button>
           <Button variant="outline" onClick={test} disabled={!!busy || c.target.kind === "none"}>
             {busy === "test" ? <Loader2 className="animate-spin" /> : <Printer />} Print test page
+          </Button>
+          <Button variant="outline" onClick={drawer} disabled={!!busy || c.target.kind === "none"}>
+            {busy === "drawer" ? <Loader2 className="animate-spin" /> : <Banknote />} Open drawer
           </Button>
         </div>
       </div>
@@ -462,38 +476,41 @@ function ConnectionSettings() {
   }
 
   return (
-    <div className="grid max-w-4xl grid-cols-2 gap-4">
-      <Section title="This till">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-          <dt className="text-muted-foreground">Name</dt>
-          <dd>{state.pairing.terminal_name}</dd>
-          <dt className="text-muted-foreground">Receipt prefix</dt>
-          <dd className="tabular">{state.pairing.receipt_prefix}</dd>
-          <dt className="text-muted-foreground">Sync status</dt>
-          <dd>{s.revoked ? <Badge variant="destructive">Revoked</Badge> : s.online ? <Badge variant="secondary">Online</Badge> : <Badge variant="outline">Offline</Badge>}</dd>
-          <dt className="text-muted-foreground">Last sync</dt>
-          <dd>{timeAgo(s.last_sync_at)}</dd>
-          <dt className="text-muted-foreground">Waiting to send</dt>
-          <dd className="tabular">{s.pending}</dd>
-          <dt className="text-muted-foreground">Data revision</dt>
-          <dd className="tabular">{s.rev}</dd>
-          <dt className="text-muted-foreground">Version</dt>
-          <dd>{state.version}</dd>
-          <dt className="text-muted-foreground">Data folder</dt>
-          <dd className="truncate text-xs" title={state.data_dir}>
-            {state.data_dir}
-          </dd>
-        </dl>
-        {s.last_error && !s.online && <p className="mt-4 rounded-lg bg-muted p-2 text-xs text-muted-foreground">{s.last_error}</p>}
-        {s.rejected > 0 && (
-          <div className="mt-4 flex items-center justify-between rounded-lg border border-red-500/30 bg-red-500/8 p-3 text-sm">
-            {s.rejected} item(s) were refused by the hub.
-            <Button size="sm" variant="outline" onClick={() => api.retryRejected().then(refresh)}>
-              <RefreshCw /> Retry
-            </Button>
-          </div>
-        )}
-      </Section>
+    <div className="grid max-w-4xl grid-cols-2 items-start gap-4">
+      <div className="space-y-4">
+        <Section title="This till">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+            <dt className="text-muted-foreground">Name</dt>
+            <dd>{state.pairing.terminal_name}</dd>
+            <dt className="text-muted-foreground">Receipt prefix</dt>
+            <dd className="tabular">{state.pairing.receipt_prefix}</dd>
+            <dt className="text-muted-foreground">Sync status</dt>
+            <dd>{s.revoked ? <Badge variant="destructive">Revoked</Badge> : s.online ? <Badge variant="secondary">Online</Badge> : <Badge variant="outline">Offline</Badge>}</dd>
+            <dt className="text-muted-foreground">Last sync</dt>
+            <dd>{timeAgo(s.last_sync_at)}</dd>
+            <dt className="text-muted-foreground">Waiting to send</dt>
+            <dd className="tabular">{s.pending}</dd>
+            <dt className="text-muted-foreground">Data revision</dt>
+            <dd className="tabular">{s.rev}</dd>
+            <dt className="text-muted-foreground">Version</dt>
+            <dd>{state.version}</dd>
+            <dt className="text-muted-foreground">Data folder</dt>
+            <dd className="truncate text-xs" title={state.data_dir}>
+              {state.data_dir}
+            </dd>
+          </dl>
+          {s.last_error && !s.online && <p className="mt-4 rounded-lg bg-muted p-2 text-xs text-muted-foreground">{s.last_error}</p>}
+          {s.rejected > 0 && (
+            <div className="mt-4 flex items-center justify-between rounded-lg border border-red-500/30 bg-red-500/8 p-3 text-sm">
+              {s.rejected} item(s) were refused by the hub.
+              <Button size="sm" variant="outline" onClick={() => api.retryRejected().then(refresh)}>
+                <RefreshCw /> Retry
+              </Button>
+            </div>
+          )}
+        </Section>
+        <Troubleshooting />
+      </div>
 
       <div className="space-y-4">
         {state.mode === "host" && (
@@ -522,5 +539,47 @@ function ConnectionSettings() {
         </Section>
       </div>
     </div>
+  )
+}
+
+/** Logs and a support bundle, for problems with printers, sync or Windows. */
+function Troubleshooting() {
+  const diag = useQuery({ queryKey: ["diagnostics"], queryFn: api.getDiagnostics })
+  const [busy, setBusy] = useState(false)
+  async function save() {
+    setBusy(true)
+    try {
+      const path = await api.saveDiagnostics()
+      if (path) toast.success("Saved " + path, { description: "Send this file to support. It has logs and settings, not sales or customer data." })
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const d = diag.data
+  return (
+    <Section title="Troubleshooting" description="Everything this till does is logged. If something goes wrong, save a support file and send it to whoever looks after your system.">
+      {d && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
+          <dt className="text-muted-foreground">System</dt>
+          <dd>{d.os}</dd>
+          <dt className="text-muted-foreground">Log file</dt>
+          <dd className="truncate text-xs" title={d.log_file}>
+            {d.log_file || "Not available"}
+          </dd>
+          <dt className="text-muted-foreground">Printers found</dt>
+          <dd className="text-xs">{d.printers_error ? <span className="text-destructive">{d.printers_error}</span> : d.printers?.length ? d.printers.join(", ") : "None installed"}</dd>
+        </dl>
+      )}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button variant="outline" onClick={save} disabled={busy}>
+          {busy ? <Loader2 className="animate-spin" /> : <LifeBuoy />} Save support file
+        </Button>
+        <Button variant="ghost" onClick={() => api.openDataFolder()}>
+          <FolderOpen /> Open data folder
+        </Button>
+      </div>
+    </Section>
   )
 }

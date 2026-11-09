@@ -134,6 +134,18 @@ func TestEncodeTextASCII(t *testing.T) {
 	}
 }
 
+func TestWidthRuler(t *testing.T) {
+	for _, cols := range []int{32, 42, 48} {
+		r := widthRuler(cols)
+		if len(r) != cols || r[0] != '|' || r[cols-1] != '|' {
+			t.Fatalf("ruler(%d) = %q", cols, r)
+		}
+		for _, l := range Layout(TestReceipt("S", ngn, Paper{Name: "x", Cols: cols}), cols) {
+			_ = l
+		}
+	}
+}
+
 // Writes previews for eyeballing when RECEIPT_PREVIEW_DIR is set.
 func TestWritePreviews(t *testing.T) {
 	dir := os.Getenv("RECEIPT_PREVIEW_DIR")
@@ -157,6 +169,7 @@ func TestWritePreviews(t *testing.T) {
 		st[k] = v
 	}
 	write("receipt-taxed.png", FromSale(taxed, st, ngn, "Till 1", false))
+	write("test-page.png", TestReceipt("Kalu Books", ngn, Paper80))
 	write("refund.png", FromReturn(&protocol.Return{ReturnNo: "T02-R00001", SaleReceiptNo: "T01-000042", UserName: "Musa", CreatedAt: 1762600000000,
 		CustomerName: "Chidi Okeke", Reason: "Damaged spine", TotalMinor: 400000, TaxMinor: 27907,
 		Lines:   []protocol.ReturnLine{{ProductName: "Things Fall Apart", QtyMilli: 1000, TotalMinor: 400000, Restock: false}},

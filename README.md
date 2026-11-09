@@ -1,5 +1,7 @@
 # Zebiventor
 
+Progress and what comes next: [ROADMAP.md](ROADMAP.md).
+
 Offline-first point of sale and inventory for shops with several tills on a
 local network: bookshops, groceries, pharmacies, distributors.
 
@@ -87,8 +89,10 @@ the hub's records, so they need the hub to be reachable. Selling stays offline-c
   count are therefore both accounted for. Several people can count at once
   (scan +1 or type a total). Optionally, items not counted are set to zero.
   If a till hasn't synced since counting began, you get a warning.
-- *Locations and transfers:* shop floor, store room, warehouse. A transfer
-  moves stock out of one location and into another in one step.
+- *Locations and transfers:* shop floor, store room, warehouse. Goods leave
+  the source when a transfer is sent and stay in transit until someone at the
+  destination receives them; shortfalls are recorded, and cancelling returns
+  the stock. "Arrives now" does it in one step for rooms in the same building.
 - *Stock levels:* on hand, reorder level, 30-day sales, value at cost and at
   retail, low/out filters, and a per-item ledger with running balance. Export to CSV.
 - *Customer accounts:* any till can take a payment on account, even offline.
@@ -99,6 +103,12 @@ the hub's records, so they need the hub to be reachable. Selling stays offline-c
   cashier, till, customer or location, net of returns. A return that isn't
   restocked keeps its cost as a loss. Also: money in by payment method, shifts
   with cash variances, and an activity log. Everything exports to CSV.
+- *Money owed to suppliers:* bills (the supplier's invoice, usually from a
+  delivery) with due dates from the supplier's payment terms. Payments go to
+  the bills you tick, then the oldest; overpayments stay as credit for the next
+  bill. Supplier statement and an ageing report (not due, 1–30 … over 90 days).
+- *A4 documents:* purchase orders, transfer notes, supplier statements and
+  payment advice open in the browser to print or save as PDF.
 - *Catalogue import/export:* CSV with flexible headers (name/title, price,
   cost, barcode/ISBN, category, any extra column becomes a product detail). It
   previews (dry run) before applying; rows with problems are listed and skipped.
@@ -120,11 +130,15 @@ wails dev                         # run the app with hot reload
 go test -race ./internal/...      # unit + end-to-end tests (5 tills, offline, reconnect)
 wails build                       # desktop app for this OS
 wails build -platform windows/amd64
+./scripts/build-windows.sh        # Windows installer (needs NSIS: brew install makensis)
 go build -o zebihub ./cmd/zebihub # headless hub
 ```
 
 Run several tills on one machine by giving each its own data folder:
 `ZEBIVENTOR_DATA=/tmp/till2 wails dev`.
+
+Logs are in `<data folder>/logs` (rotated at 5 MB). Settings → Connection →
+**Save support file** zips the logs and settings (no sales or customer data).
 
 Receipt previews can be written to disk for inspection:
 `RECEIPT_PREVIEW_DIR=/tmp go test ./internal/printing -run Previews`.
@@ -138,6 +152,7 @@ internal/store         SQLite with queued, group-committed writer
 internal/hub           hub: schema, pairing, auth, sync, catalogue, backups
 internal/terminal      till: local DB, outbox, sync client, sales
 internal/printing      receipt layout, raster rendering, ESC/POS, printer transports
+internal/documents     A4 documents (purchase order, statements…) as printable HTML
 internal/discovery     mDNS advertise/browse
 internal/protocol      wire types shared by hub and tills
 frontend/              React + TypeScript + Tailwind v4 + shadcn/ui

@@ -8,7 +8,7 @@ import (
 )
 
 // Version is the application version (overridden at build time with -ldflags).
-var Version = "0.1.0-dev"
+var Version = "0.3.5-dev"
 
 // Dir returns the data directory. ZEBIVENTOR_DATA overrides it, which also
 // makes it easy to run several tills on one machine for testing.

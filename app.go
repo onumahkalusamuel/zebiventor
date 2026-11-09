@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,7 @@ type App struct {
 	user   *terminal.User
 
 	approvals map[string]approval // one-time manager approvals
+	logFile   *appdata.LogFile
 }
 
 type approval struct {
@@ -60,7 +62,10 @@ type approval struct {
 }
 
 func NewApp() *App {
-	return &App{dataDir: appdata.Dir(), log: slog.Default(), approvals: map[string]approval{}}
+	dir := appdata.Dir()
+	log, lf := appdata.NewLogger(dir, "zebiventor.log", os.Stderr)
+	slog.SetDefault(log)
+	return &App{dataDir: dir, log: log, logFile: lf, approvals: map[string]approval{}}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -69,6 +74,7 @@ func (a *App) startup(ctx context.Context) {
 		a.log.Error("cannot create data dir", "err", err)
 	}
 	a.cfg = a.loadConfig()
+	a.log.Info("starting", "version", appdata.Version, "os", goruntime.GOOS+"/"+goruntime.GOARCH, "mode", a.cfg.Mode, "data", a.dataDir)
 	t, err := terminal.Open(ctx, terminal.Config{
 		DataDir:  filepath.Join(a.dataDir, "till"),
 		Version:  appdata.Version,
@@ -97,6 +103,10 @@ func (a *App) shutdown(context.Context) {
 		a.term.Close()
 	}
 	a.stopHub()
+	a.log.Info("stopped")
+	if a.logFile != nil {
+		a.logFile.Close()
+	}
 }
 
 func findHub(ctx context.Context, hubID string) (string, bool) {
@@ -517,9 +527,24 @@ func (a *App) printSale(s *protocol.Sale, reprint, openDrawer bool) error {
 	if err != nil {
 		return err
 	}
+	return a.sendJob(c, job, "receipt")
+}
+
+// sendJob sends a print job and logs the outcome, so printer problems at a
+// till can be diagnosed from the log file.
+func (a *App) sendJob(c PrinterConfig, job []byte, what string) error {
 	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
 	defer cancel()
-	return printing.Send(ctx, c.Target, job)
+	start := time.Now()
+	err := printing.Send(ctx, c.Target, job)
+	attrs := []any{"what", what, "kind", c.Target.Kind, "address", c.Target.Address, "paper", c.Paper, "mode", c.Mode,
+		"bytes", len(job), "ms", time.Since(start).Milliseconds()}
+	if err != nil {
+		a.log.Warn("print failed", append(attrs, "err", err)...)
+	} else {
+		a.log.Info("printed", attrs...)
+	}
+	return err
 }
 
 // PrintSale prints (or reprints) a stored sale's receipt.
@@ -569,9 +594,15 @@ func (a *App) TestPrint(c PrinterConfig) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
-	defer cancel()
-	return printing.Send(ctx, c.Target, job)
+	return a.sendJob(c, job, "test page")
+}
+
+// TestDrawer sends only the drawer-kick pulse, using unsaved settings.
+func (a *App) TestDrawer(c PrinterConfig) error {
+	if _, err := a.currentUser(protocol.RoleAdmin, protocol.RoleManager); err != nil {
+		return err
+	}
+	return a.sendJob(c, printing.DrawerKick(), "drawer test")
 }
 
 // OpenDrawer opens the cash drawer without a sale ("no sale"); cashiers need a manager.
@@ -1014,7 +1045,5 @@ func (a *App) sendReceipt(r printing.Receipt, c PrinterConfig, openDrawer bool) 
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
-	defer cancel()
-	return printing.Send(ctx, c.Target, job)
+	return a.sendJob(c, job, "receipt")
 }

@@ -383,17 +383,34 @@ func taxLabel(settings map[string]string, mode string) string {
 func TestReceipt(storeName string, cur money.Currency, paper Paper) Receipt {
 	return Receipt{
 		StoreName:   storeName,
-		HeaderLines: []string{"Printer test page", paper.Name + " paper, " + fmt.Sprint(paper.Cols) + " columns"},
+		HeaderLines: []string{"Printer test page", paper.Name + " paper, " + fmt.Sprint(paper.Cols) + " columns", widthRuler(paper.Cols)},
 		Title:       "TEST PRINT",
 		Meta:        [][2]string{{"Date", time.Now().Format("02 Jan 2006 15:04")}},
 		Items: []Item{
 			{Name: "Short item", Detail: "1 x " + cur.Format(150000), Total: cur.Format(150000)},
 			{Name: "A deliberately long product name that must wrap across more than one line", Detail: "3 x " + cur.Format(99999), Total: cur.Format(299997)},
 		},
-		Totals:      []Row{{Label: "TOTAL", Value: cur.FormatSymbol(449997), Strong: true}},
-		FooterLines: []string{"If this prints cleanly and cuts,", "the printer is ready."},
-		QR:          "ZEBIVENTOR-TEST",
+		Totals: []Row{{Label: "TOTAL", Value: cur.FormatSymbol(449997), Strong: true}},
+		FooterLines: []string{"Characters: " + cur.Symbol + " £ € é ñ ü ç ß",
+			"The ruler above should fill one line",
+			"exactly, from | to |.",
+			"If this prints cleanly and cuts,", "the printer is ready."},
+		QR: "ZEBIVENTOR-TEST",
 	}
+}
+
+// widthRuler is exactly cols characters wide: |----+----+----|. Lines that
+// wrap or fall short show the paper setting does not match the printer.
+func widthRuler(cols int) string {
+	if cols < 2 {
+		return "|"
+	}
+	b := []byte(strings.Repeat("-", cols))
+	for i := 5; i < cols-1; i += 5 {
+		b[i] = '+'
+	}
+	b[0], b[cols-1] = '|', '|'
+	return string(b)
 }
 
 // ---------- layout ----------

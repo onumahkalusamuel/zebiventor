@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Ban, CheckCheck, ClipboardList, Loader2, PackageCheck, PackagePlus, Pencil, Plus, Send, Trash2, Truck } from "lucide-react"
+import { Ban, CheckCheck, ClipboardList, FileText, Loader2, PackageCheck, PackagePlus, Pencil, Plus, Send, Trash2, Truck } from "lucide-react"
 import { toast } from "sonner"
-import { Chips, HubRequired, ItemPicker, LocationSelect, QueryError, itemLabel, toDateInput } from "@/components/backoffice"
+import { Chips, HubRequired, ItemPicker, LocationSelect, PrintButton, QueryError, itemLabel, toDateInput } from "@/components/backoffice"
+import { BillDialog, BillsTab, PayDialog, PaymentsTab, SupplierSheet } from "@/screens/payables"
 import { EmptyState, Page, PageHeader } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,19 +15,25 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { errorMessage } from "@/lib/api"
-import { formatDateTime, formatQty, parseMoney, parseQty } from "@/lib/format"
+import { can, formatDateTime, formatQty, parseMoney, parseQty } from "@/lib/format"
 import { hub } from "@/lib/hub"
 import { useLoadedState, useMoney } from "@/lib/state"
 import type { GoodsReceipt, POStatus, PurchaseOrder, StockReportRow, Supplier } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-type Tab = "orders" | "deliveries" | "suppliers"
+type Tab = "orders" | "deliveries" | "bills" | "payments" | "suppliers"
 
 export function Purchasing() {
   const [tab, setTab] = useState<Tab>("orders")
   const [editing, setEditing] = useState<PurchaseOrder | "new" | null>(null)
   const [receiving, setReceiving] = useState<PurchaseOrder | "direct" | null>(null)
   const [supplier, setSupplier] = useState<Supplier | "new" | null>(null)
+  const [account, setAccount] = useState<Supplier | null>(null)
+  const [bill, setBill] = useState<{ supplierId?: string; grn?: GoodsReceipt } | null>(null)
+  const [pay, setPay] = useState<{ supplierId?: string; billIds?: string[] } | null>(null)
+  // Bills and payments are money matters: managers and admins only.
+  const canPay = can(useLoadedState().user?.role, "admin", "manager")
+  const openPay = (supplierId?: string, billIds?: string[]) => setPay({ supplierId, billIds })
   return (
     <Page>
       <PageHeader
@@ -51,17 +58,34 @@ export function Purchasing() {
             options={[
               { value: "orders", label: "Orders" },
               { value: "deliveries", label: "Deliveries" },
+              ...(canPay
+                ? [
+                    { value: "bills" as const, label: "Bills" },
+                    { value: "payments" as const, label: "Payments" },
+                  ]
+                : []),
               { value: "suppliers", label: "Suppliers" },
             ]}
           />
           {tab === "orders" && <OrdersTab onEdit={setEditing} onReceive={setReceiving} />}
-          {tab === "deliveries" && <DeliveriesTab />}
-          {tab === "suppliers" && <SuppliersTab onEdit={setSupplier} />}
+          {tab === "deliveries" && <DeliveriesTab onBill={canPay ? (grn) => setBill({ grn }) : undefined} />}
+          {tab === "bills" && canPay && <BillsTab onBill={() => setBill({})} onPay={openPay} />}
+          {tab === "payments" && canPay && <PaymentsTab onPay={() => openPay()} />}
+          {tab === "suppliers" && <SuppliersTab onEdit={setSupplier} onOpen={canPay ? setAccount : undefined} />}
         </div>
       </HubRequired>
       {editing && <OrderEditor order={editing === "new" ? null : editing} onClose={() => setEditing(null)} onNewSupplier={() => setSupplier("new")} />}
       {receiving && <ReceiveDialog order={receiving === "direct" ? null : receiving} onClose={() => setReceiving(null)} />}
       {supplier && <SupplierDialog supplier={supplier === "new" ? null : supplier} onClose={() => setSupplier(null)} />}
+      <SupplierSheet
+        supplier={account}
+        onClose={() => setAccount(null)}
+        onEdit={(s) => setSupplier(s)}
+        onBill={(supplierId) => setBill({ supplierId })}
+        onPay={(supplierId) => openPay(supplierId)}
+      />
+      {bill && <BillDialog supplierId={bill.supplierId} grn={bill.grn} onClose={() => setBill(null)} />}
+      {pay && <PayDialog supplierId={pay.supplierId} billIds={pay.billIds} onClose={() => setPay(null)} />}
     </Page>
   )
 }
@@ -245,6 +269,7 @@ function OrderSheet({ id, onClose, onEdit, onReceive }: { id: string | null; onC
         </div>
         {o && (
           <div className="flex flex-wrap gap-2 border-t p-4">
+            {o.status !== "cancelled" && <PrintButton kind="purchase_order" id={o.id} />}
             {o.status === "draft" && (
               <>
                 <Button variant="outline" onClick={() => onEdit(o)} disabled={busy}>
@@ -657,7 +682,7 @@ function ReceiveDialog({ order, onClose }: { order: PurchaseOrder | null; onClos
   )
 }
 
-function DeliveriesTab() {
+function DeliveriesTab({ onBill }: { onBill?: (g: GoodsReceipt) => void }) {
   const { fmt } = useMoney()
   const [openId, setOpenId] = useState<string | null>(null)
   const list = useQuery({ queryKey: ["bo", "receipts"], queryFn: () => hub.receipts() })
@@ -676,6 +701,7 @@ function DeliveriesTab() {
                 <TableHead>Order</TableHead>
                 <TableHead>Supplier ref</TableHead>
                 <TableHead>Received</TableHead>
+                {onBill && <TableHead>Bill</TableHead>}
                 <TableHead className="pr-4 text-right">Value</TableHead>
               </TableRow>
             </TableHeader>
@@ -689,6 +715,11 @@ function DeliveriesTab() {
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(g.created_at)} · {g.received_by}
                   </TableCell>
+                  {onBill && (
+                    <TableCell className="tabular">
+                      {g.bill_no || (g.supplier_id ? <span className="text-amber-700 dark:text-amber-400">Not billed</span> : <span className="text-muted-foreground">–</span>)}
+                    </TableCell>
+                  )}
                   <TableCell className="pr-4 text-right font-medium tabular">{fmt(g.total_minor)}</TableCell>
                 </TableRow>
               ))}
@@ -696,12 +727,12 @@ function DeliveriesTab() {
           </Table>
         </div>
       )}
-      <DeliverySheet id={openId} onClose={() => setOpenId(null)} />
+      <DeliverySheet id={openId} onClose={() => setOpenId(null)} onBill={onBill} />
     </>
   )
 }
 
-function DeliverySheet({ id, onClose }: { id: string | null; onClose: () => void }) {
+function DeliverySheet({ id, onClose, onBill }: { id: string | null; onClose: () => void; onBill?: (g: GoodsReceipt) => void }) {
   const { fmt } = useMoney()
   const g = useQuery({ queryKey: ["bo", "receipt", id], queryFn: () => hub.receipt(id!), enabled: !!id })
   const d: GoodsReceipt | undefined = g.data
@@ -716,10 +747,11 @@ function DeliverySheet({ id, onClose }: { id: string | null; onClose: () => void
           <QueryError error={g.error} />
           {d && (
             <>
-              {(d.po_no || d.supplier_ref || d.note) && (
+              {(d.po_no || d.supplier_ref || d.note || d.bill_no) && (
                 <div className="space-y-1 text-sm">
                   {d.po_no && <div>Against order {d.po_no}</div>}
                   {d.supplier_ref && <div>Supplier ref {d.supplier_ref}</div>}
+                  {d.bill_no && <div>Billed on {d.bill_no}</div>}
                   {d.note && <div className="text-muted-foreground">{d.note}</div>}
                 </div>
               )}
@@ -757,12 +789,24 @@ function DeliverySheet({ id, onClose }: { id: string | null; onClose: () => void
             </>
           )}
         </div>
+        {d && onBill && d.supplier_id && !d.bill_no && (
+          <div className="flex justify-end border-t p-4">
+            <Button
+              onClick={() => {
+                onClose()
+                onBill(d)
+              }}
+            >
+              <FileText /> Record the supplier's bill
+            </Button>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   )
 }
 
-function SuppliersTab({ onEdit }: { onEdit: (s: Supplier | "new") => void }) {
+function SuppliersTab({ onEdit, onOpen }: { onEdit: (s: Supplier | "new") => void; onOpen?: (s: Supplier) => void }) {
   const { fmt } = useMoney()
   const list = useSuppliers()
   return (
@@ -783,12 +827,13 @@ function SuppliersTab({ onEdit }: { onEdit: (s: Supplier | "new") => void }) {
                   <TableHead>Contact</TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead className="text-right">Open orders</TableHead>
-                  <TableHead className="pr-4 text-right">Bought to date</TableHead>
+                  <TableHead className="text-right">Bought to date</TableHead>
+                  {onOpen && <TableHead className="pr-4 text-right">We owe</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {(list.data ?? []).map((s) => (
-                  <TableRow key={s.id} className={cn("cursor-pointer", !s.active && "opacity-50")} onClick={() => onEdit(s)}>
+                  <TableRow key={s.id} className={cn("cursor-pointer", !s.active && "opacity-50")} onClick={() => (onOpen ? onOpen(s) : onEdit(s))}>
                     <TableCell className="pl-4 font-medium">
                       {s.name}
                       {!s.active && <Badge variant="outline" className="ml-2">Inactive</Badge>}
@@ -799,7 +844,13 @@ function SuppliersTab({ onEdit }: { onEdit: (s: Supplier | "new") => void }) {
                     </TableCell>
                     <TableCell className="text-muted-foreground tabular">{s.phone}</TableCell>
                     <TableCell className="text-right tabular">{s.open_orders || "–"}</TableCell>
-                    <TableCell className="pr-4 text-right font-medium tabular">{fmt(s.received_minor)}</TableCell>
+                    <TableCell className={cn("text-right tabular", !onOpen && "pr-4")}>{fmt(s.received_minor)}</TableCell>
+                    {onOpen && (
+                      <TableCell className="pr-4 text-right font-medium tabular">
+                        {s.balance_minor === 0 ? <span className="text-muted-foreground">–</span> : s.balance_minor < 0 ? <span className="text-emerald-700 dark:text-emerald-400">{fmt(-s.balance_minor)} credit</span> : fmt(s.balance_minor)}
+                        {s.overdue_minor > 0 && <div className="text-xs font-normal text-destructive">{fmt(s.overdue_minor)} overdue</div>}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -822,7 +873,7 @@ function SupplierDialog({ supplier, onClose }: { supplier: Supplier | null; onCl
     try {
       await hub.saveSupplier(f)
       toast.success("Supplier saved")
-      qc.invalidateQueries({ queryKey: ["bo", "suppliers"] })
+      qc.invalidateQueries({ queryKey: ["bo"] })
       onClose()
     } catch (err) {
       toast.error(errorMessage(err))
@@ -859,9 +910,20 @@ function SupplierDialog({ supplier, onClose }: { supplier: Supplier | null; onCl
             <Label>Address</Label>
             <Input value={f.address ?? ""} onChange={set("address")} className="h-10" />
           </div>
-          <div className="space-y-1.5">
-            <Label>Notes (terms, account number…)</Label>
-            <Input value={f.notes ?? ""} onChange={set("notes")} className="h-10" />
+          <div className="grid grid-cols-[1fr_2fr] gap-3">
+            <div className="space-y-1.5">
+              <Label>Pays within (days)</Label>
+              <Input
+                inputMode="numeric"
+                value={f.terms_days ?? 0}
+                onChange={(e) => setF((x) => ({ ...x, terms_days: Number(e.target.value.replace(/\D/g, "")) || 0 }))}
+                className="h-10 text-right tabular"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes (bank account, rep…)</Label>
+              <Input value={f.notes ?? ""} onChange={set("notes")} className="h-10" />
+            </div>
           </div>
           {supplier && (
             <label className="flex items-center gap-2 text-sm">

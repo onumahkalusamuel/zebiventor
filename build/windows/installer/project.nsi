@@ -57,6 +57,8 @@ VIAddVersionKey "ProductName"     "${INFO_PRODUCTNAME}"
 # !insertmacro MUI_PAGE_LICENSE "resources\eula.txt" # Adds a EULA page to the installer
 !insertmacro MUI_PAGE_DIRECTORY # In which folder install page.
 !insertmacro MUI_PAGE_INSTFILES # Installing page.
+!define MUI_FINISHPAGE_RUN "$INSTDIR\${PRODUCT_EXECUTABLE}"
+!define MUI_FINISHPAGE_RUN_TEXT "Start ${INFO_PRODUCTNAME}"
 !insertmacro MUI_PAGE_FINISH # Finished installation page.
 
 !insertmacro MUI_UNPAGE_INSTFILES # Uinstalling page
@@ -82,8 +84,25 @@ Section
     !insertmacro wails.webview2runtime
 
     SetOutPath $INSTDIR
-    
+
+    # Upgrading a PC that runs the headless hub as a service: stop it so its
+    # program file can be replaced, and start it again afterwards. Both
+    # commands fail harmlessly when the service is not installed.
+    IfFileExists "$INSTDIR\zebihub.exe" 0 +2
+        nsExec::Exec '"$INSTDIR\zebihub.exe" service stop'
+
     !insertmacro wails.files
+    # Headless hub, for a back-office PC: zebihub service install
+    File "..\..\bin\zebihub.exe"
+
+    # Let other tills reach the hub (TCP 7420) and find it (mDNS) on the
+    # local network. Rules are per program, private/domain networks only.
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${INFO_PRODUCTNAME}"'
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${INFO_PRODUCTNAME} hub"'
+    nsExec::Exec 'netsh advfirewall firewall add rule name="${INFO_PRODUCTNAME}" dir=in action=allow program="$INSTDIR\${PRODUCT_EXECUTABLE}" enable=yes profile=private,domain'
+    nsExec::Exec 'netsh advfirewall firewall add rule name="${INFO_PRODUCTNAME} hub" dir=in action=allow program="$INSTDIR\zebihub.exe" enable=yes profile=private,domain'
+
+    nsExec::Exec '"$INSTDIR\zebihub.exe" service start'
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
@@ -91,8 +110,15 @@ Section
     !insertmacro wails.writeUninstaller
 SectionEnd
 
-Section "uninstall" 
+Section "uninstall"
     !insertmacro wails.setShellContext
+
+    # Remove the hub service if this PC ran one. Store data in
+    # %ProgramData%\Zebiventor and %AppData%\Zebiventor is kept.
+    nsExec::Exec '"$INSTDIR\zebihub.exe" service stop'
+    nsExec::Exec '"$INSTDIR\zebihub.exe" service uninstall'
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${INFO_PRODUCTNAME}"'
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${INFO_PRODUCTNAME} hub"'
 
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
 
