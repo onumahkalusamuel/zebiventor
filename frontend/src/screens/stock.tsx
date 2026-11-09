@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, ArrowRightLeft, ClipboardCheck, History, Loader2, MapPin, PackageCheck, Plus, Search, Trash2, Warehouse, X } from "lucide-react"
 import { toast } from "sonner"
+import { ArrivingHere } from "@/components/arriving"
 import { Chips, ExportButton, HubRequired, ItemPicker, LocationSelect, PrintButton, QueryError, itemLabel, useLocations } from "@/components/backoffice"
 import { EmptyState, Page, PageHeader, StatCard } from "@/components/page"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +28,7 @@ export function Stock() {
   return (
     <Page>
       <PageHeader title="Stock" description="What you hold, where, and what it's worth. Counts and transfers update every till within seconds." />
+      <ArrivingHere />
       <HubRequired>
         <div className="space-y-4 px-8 pb-8">
           <Chips

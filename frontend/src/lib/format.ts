@@ -104,5 +104,47 @@ export const businessTypes = [
   { value: "grocery", label: "Grocery / Supermarket" },
   { value: "pharmacy", label: "Pharmacy" },
   { value: "distributor", label: "Distributor / Wholesale" },
+  { value: "fashion", label: "Fashion / Boutique" },
+  { value: "hardware", label: "Hardware / Building materials" },
   { value: "general", label: "General retail" },
 ]
+
+/** Product details the shop records (Settings → Shop type), with a fallback for old hubs. */
+export function productFields(settings: Record<string, string>): { key: string; label: string; placeholder?: string }[] {
+  try {
+    const v = JSON.parse(settings.product_fields || "null")
+    if (Array.isArray(v)) return v
+  } catch {
+    /* fall through */
+  }
+  return attributeFields[settings.business_type || "general"] ?? attributeFields.general
+}
+
+/** Units products can be sold in. */
+export function shopUnits(settings: Record<string, string>): string[] {
+  try {
+    const v = JSON.parse(settings.units || "null")
+    if (Array.isArray(v) && v.length) return v
+  } catch {
+    /* fall through */
+  }
+  return ["pc", "kg", "g", "l", "ml", "m", "pack", "box", "carton", "dozen"]
+}
+
+/** Compares dotted versions ("0.4.0", "0.4.1-dev"): negative, 0 or positive. */
+export function compareVersions(a: string, b: string): number {
+  const split = (v: string) => {
+    const [nums, pre = ""] = v.trim().replace(/^v/, "").split("-", 2)
+    return { n: nums.split(".").map((x) => parseInt(x, 10) || 0), pre }
+  }
+  const x = split(a)
+  const y = split(b)
+  for (let i = 0; i < Math.max(x.n.length, y.n.length); i++) {
+    const d = (x.n[i] ?? 0) - (y.n[i] ?? 0)
+    if (d) return d
+  }
+  if (x.pre === y.pre) return 0
+  if (!x.pre) return 1
+  if (!y.pre) return -1
+  return x.pre < y.pre ? -1 : 1
+}

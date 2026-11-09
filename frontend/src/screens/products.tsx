@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, errorMessage } from "@/lib/api"
-import { attributeFields, can, formatQty, parseMoney, parseQty } from "@/lib/format"
+import { can, formatQty, parseMoney, parseQty, productFields, shopUnits } from "@/lib/format"
 import { useLoadedState, useMoney } from "@/lib/state"
 import type { ProductDetail, ProductInput, VariantDetail } from "@/lib/types"
 import { cn } from "@/lib/utils"
@@ -153,7 +153,8 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
   const { currency } = useMoney()
   const categories = useQuery({ queryKey: ["categories"], queryFn: api.categories })
   const business = state.settings.business_type || "general"
-  const fields = attributeFields[business] ?? attributeFields.general
+  const fields = productFields(state.settings)
+  const units = shopUnits(state.settings)
   const toMajor = (m: number) => (m / 10 ** currency.digits).toFixed(currency.digits)
 
   const [name, setName] = useState(product?.name ?? "")
@@ -163,7 +164,7 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
   const [allowFraction, setAllowFraction] = useState(product?.allow_fraction ?? false)
   const [trackStock, setTrackStock] = useState(product?.track_stock ?? true)
   const [active, setActive] = useState(product?.active ?? true)
-  const [taxPct, setTaxPct] = useState(product ? String((product.tax_rate_bp ?? 0) / 100) : state.settings.tax_mode && state.settings.tax_mode !== "none" ? "7.5" : "0")
+  const [taxPct, setTaxPct] = useState(product ? String((product.tax_rate_bp ?? 0) / 100) : defaultTaxPct(state.settings))
   const [newCategory, setNewCategory] = useState("")
   const [variants, setVariants] = useState<VariantForm[]>(
     product?.variants.map((v) => ({
@@ -287,7 +288,7 @@ function ProductDialog({ product, onClose }: { product: ProductDetail | null; on
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {["pc", "kg", "g", "l", "ml", "m", "pack", "box", "carton", "dozen"].map((u) => (
+                {(units.includes(unit) ? units : [...units, unit]).map((u) => (
                   <SelectItem key={u} value={u}>
                     {u}
                   </SelectItem>
@@ -577,4 +578,10 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
       </DialogContent>
     </Dialog>
   )
+}
+
+/** Tax rate new products start with: the shop's default, else 7.5% when tax is on. */
+function defaultTaxPct(settings: Record<string, string>): string {
+  if (settings.default_tax_bp) return String(Number(settings.default_tax_bp) / 100)
+  return settings.tax_mode && settings.tax_mode !== "none" ? "7.5" : "0"
 }

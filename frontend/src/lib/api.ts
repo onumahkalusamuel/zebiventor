@@ -36,6 +36,23 @@ export const api = {
   getDiagnostics: (): Promise<T.Diagnostics> => go.GetDiagnostics(),
   saveDiagnostics: (): Promise<string> => go.SaveDiagnostics(),
   openDataFolder: (): Promise<void> => go.OpenDataFolder(),
+  documentEmailDraft: (kind: T.DocumentKind, id: string): Promise<T.EmailDraft> => go.DocumentEmailDraft(kind, id),
+  emailDocument: (kind: T.DocumentKind, id: string, d: T.EmailDraft): Promise<void> => go.EmailDocument(kind, id, d),
+
+  shopTemplates: (): Promise<T.ShopTemplate[]> => go.ShopTemplates(),
+  incomingTransfers: (): Promise<T.IncomingTransfer[]> => go.IncomingTransfers(),
+  receiveTransferHere: (id: string, r: { note: string; lines: { variant_id: string; received_qty_milli: number }[] }): Promise<void> =>
+    go.ReceiveTransferHere(id, r),
+
+  chooseFolder: (title: string): Promise<string> => go.ChooseFolder(title),
+  chooseBackupFile: (): Promise<T.BackupInfo | null> => go.ChooseBackupFile(),
+  inspectBackupFile: (path: string): Promise<T.BackupInfo> => go.InspectBackupFile(path),
+  restoreBackup: (path: string): Promise<string> => go.RestoreBackup(path),
+
+  getUpdateState: (): Promise<T.UpdateState> => go.GetUpdateState(),
+  downloadUpdate: (): Promise<void> => go.DownloadUpdate(),
+  installUpdate: (): Promise<void> => go.InstallUpdate(),
+  loadUpdateFile: (): Promise<T.HubUpdateStatus | null> => go.LoadUpdateFile(),
   printSale: (id: string, reprint: boolean): Promise<void> => go.PrintSale(id, reprint),
   receiptPreview: (id: string, reprint: boolean): Promise<string> => go.ReceiptPreview(id, reprint),
   testPreview: (c: T.PrinterConfig): Promise<string> => go.TestPreview(c),
@@ -88,6 +105,10 @@ export const api = {
 
 export function onSyncStatus(cb: (s: T.SyncStatus) => void): () => void {
   return EventsOn("sync:status", cb)
+}
+
+export function onUpdateState(cb: (s: T.UpdateState) => void): () => void {
+  return EventsOn("update:state", cb)
 }
 
 /** Wails rejects with the Go error string; normalise to a message. */

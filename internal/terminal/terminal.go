@@ -63,9 +63,11 @@ type Terminal struct {
 	log    *slog.Logger
 	client *client
 
-	mu      sync.Mutex
-	status  Status
-	session string // hub session token for admin calls (memory only)
+	mu       sync.Mutex
+	status   Status
+	session  string // hub session token for admin calls (memory only)
+	hubEpoch string // last data epoch the hub reported
+	hubRev   int64  // hub's latest change number from the last pull (-1 = unknown)
 
 	wake     chan struct{}
 	syncStop context.CancelFunc
@@ -94,7 +96,9 @@ func Open(ctx context.Context, cfg Config) (*Terminal, error) {
 		log:    cfg.Logger.With("component", "terminal"),
 		client: newClient(),
 		wake:   make(chan struct{}, 1),
+		hubRev: -1,
 	}
+	t.client.headers, t.client.onResponse = t.requestHeaders, t.onHubHeaders
 	if p, ok := t.Pairing(ctx); ok {
 		t.status.Paired = true
 		t.status.HubURL = p.HubURL
@@ -293,7 +297,7 @@ func (t *Terminal) Admin(ctx context.Context, method, path string, body, out any
 	if sess == "" {
 		return ErrNeedsHub
 	}
-	err := t.client.do(ctx, 15*time.Second, method, p.HubURL+path, p.token, sess, body, out)
+	err := t.client.do(ctx, adminTimeout(method, path), method, p.HubURL+path, p.token, sess, body, out)
 	if IsOffline(err) {
 		return ErrNeedsHub
 	}
@@ -301,6 +305,20 @@ func (t *Terminal) Admin(ctx context.Context, method, path string, body, out any
 		t.Nudge() // pull the change straight back
 	}
 	return err
+}
+
+// adminTimeout allows slow admin actions (a backup of a big store, an
+// update download, a slow mail server) to finish.
+func adminTimeout(method, path string) time.Duration {
+	switch {
+	case path == "/api/admin/update/check":
+		return 30 * time.Minute
+	case method == http.MethodPost && path == "/api/admin/backups", path == "/api/admin/backups/settings":
+		return 10 * time.Minute
+	case path == "/api/admin/email/send":
+		return 90 * time.Second
+	}
+	return 15 * time.Second
 }
 
 // GetKV reads a till-local setting.

@@ -85,6 +85,11 @@ Section
 
     SetOutPath $INSTDIR
 
+    # An update started from inside the app runs silently (/S): give the app
+    # a moment to close so its files can be replaced.
+    IfSilent 0 +2
+        Sleep 3000
+
     # Upgrading a PC that runs the headless hub as a service: stop it so its
     # program file can be replaced, and start it again afterwards. Both
     # commands fail harmlessly when the service is not installed.
@@ -108,6 +113,10 @@ Section
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 
     !insertmacro wails.writeUninstaller
+
+    # Updated from inside the app: start it again.
+    IfSilent 0 +2
+        Exec '"$INSTDIR\${PRODUCT_EXECUTABLE}"'
 SectionEnd
 
 Section "uninstall"

@@ -48,43 +48,62 @@ func (a *App) supplier(id string) *protocol.Supplier {
 	return nil
 }
 
+// buildDocument loads a document's data from the hub. supplier is the
+// party it is addressed to, when that is a supplier.
+func (a *App) buildDocument(kind, id string) (documents.Doc, *protocol.Supplier, error) {
+	store := documents.StoreFromSettings(a.term.Settings(a.ctx))
+	cur := a.term.Currency(a.ctx)
+	esc := url.PathEscape(id)
+	switch kind {
+	case DocPurchaseOrder:
+		var o protocol.PurchaseOrder
+		if err := a.hubGet("/api/admin/purchase-orders/"+esc, &o); err != nil {
+			return documents.Doc{}, nil, err
+		}
+		sup := a.supplier(o.SupplierID)
+		return documents.PurchaseOrder(&o, sup, store, cur), sup, nil
+	case DocTransfer:
+		var t protocol.StockTransfer
+		if err := a.hubGet("/api/admin/transfers/"+esc, &t); err != nil {
+			return documents.Doc{}, nil, err
+		}
+		return documents.TransferNote(&t, store), nil, nil
+	case DocSupplierStatement:
+		var st protocol.SupplierStatement
+		if err := a.hubGet("/api/admin/suppliers/"+esc+"/statement", &st); err != nil {
+			return documents.Doc{}, nil, err
+		}
+		return documents.SupplierStatement(&st, store, cur), &st.Supplier, nil
+	case DocPaymentAdvice:
+		var p protocol.SupplierPayment
+		if err := a.hubGet("/api/admin/supplier-payments/"+esc, &p); err != nil {
+			return documents.Doc{}, nil, err
+		}
+		sup := a.supplier(p.SupplierID)
+		return documents.PaymentAdvice(&p, sup, store, cur), sup, nil
+	}
+	return documents.Doc{}, nil, fmt.Errorf("unknown document %q", kind)
+}
+
+func docName(doc documents.Doc) string {
+	name := doc.Title
+	if doc.Number != "" {
+		name += " " + doc.Number
+	} else if len(doc.Party) > 0 {
+		name += " " + doc.Party[0]
+	}
+	return name
+}
+
 // PrintDocument opens an A4 document in the system browser, where it can be
 // printed or saved as PDF. It returns the file's path.
 func (a *App) PrintDocument(kind, id string) (string, error) {
 	if _, err := a.currentUser(); err != nil {
 		return "", err
 	}
-	store := documents.StoreFromSettings(a.term.Settings(a.ctx))
-	cur := a.term.Currency(a.ctx)
-	var doc documents.Doc
-	esc := url.PathEscape(id)
-	switch kind {
-	case DocPurchaseOrder:
-		var o protocol.PurchaseOrder
-		if err := a.hubGet("/api/admin/purchase-orders/"+esc, &o); err != nil {
-			return "", err
-		}
-		doc = documents.PurchaseOrder(&o, a.supplier(o.SupplierID), store, cur)
-	case DocTransfer:
-		var t protocol.StockTransfer
-		if err := a.hubGet("/api/admin/transfers/"+esc, &t); err != nil {
-			return "", err
-		}
-		doc = documents.TransferNote(&t, store)
-	case DocSupplierStatement:
-		var st protocol.SupplierStatement
-		if err := a.hubGet("/api/admin/suppliers/"+esc+"/statement", &st); err != nil {
-			return "", err
-		}
-		doc = documents.SupplierStatement(&st, store, cur)
-	case DocPaymentAdvice:
-		var p protocol.SupplierPayment
-		if err := a.hubGet("/api/admin/supplier-payments/"+esc, &p); err != nil {
-			return "", err
-		}
-		doc = documents.PaymentAdvice(&p, a.supplier(p.SupplierID), store, cur)
-	default:
-		return "", fmt.Errorf("unknown document %q", kind)
+	doc, _, err := a.buildDocument(kind, id)
+	if err != nil {
+		return "", err
 	}
 	html, err := doc.HTML()
 	if err != nil {
@@ -94,19 +113,77 @@ func (a *App) PrintDocument(kind, id string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	name := doc.Title
-	if doc.Number != "" {
-		name += " " + doc.Number
-	} else if len(doc.Party) > 0 {
-		name += " " + doc.Party[0]
-	}
-	path := filepath.Join(dir, safeFileName(name)+".html")
+	path := filepath.Join(dir, safeFileName(docName(doc))+".html")
 	if err := os.WriteFile(path, html, 0o644); err != nil {
 		return "", err
 	}
 	runtime.BrowserOpenURL(a.ctx, fileURL(path))
 	a.log.Info("document opened", "kind", kind, "path", path)
 	return path, nil
+}
+
+// EmailDraft is a document email ready for the user to check and send.
+type EmailDraft struct {
+	To      string `json:"to"`
+	Cc      string `json:"cc"`
+	Subject string `json:"subject"`
+	Message string `json:"message"`
+	Ready   bool   `json:"ready"` // the hub has a mail server set up
+}
+
+// DocumentEmailDraft suggests recipient, subject and message for a document.
+func (a *App) DocumentEmailDraft(kind, id string) (EmailDraft, error) {
+	if _, err := a.currentUser(protocol.RoleAdmin, protocol.RoleManager); err != nil {
+		return EmailDraft{}, err
+	}
+	doc, sup, err := a.buildDocument(kind, id)
+	if err != nil {
+		return EmailDraft{}, err
+	}
+	var ready struct {
+		Ready bool `json:"ready"`
+	}
+	_ = a.hubGet("/api/admin/email/ready", &ready)
+	d := EmailDraft{Subject: docName(doc) + " from " + doc.Store.Name, Ready: ready.Ready}
+	greeting := "Hello,"
+	if sup != nil {
+		d.To = sup.Email
+		if sup.ContactName != "" {
+			greeting = "Hello " + strings.Fields(sup.ContactName)[0] + ","
+		}
+	}
+	body := map[string]string{
+		DocPurchaseOrder:     "Please find our purchase order below. Kindly confirm the delivery date.",
+		DocSupplierStatement: "Please find our statement of account below. Let us know if anything does not match your records.",
+		DocPaymentAdvice:     "Please find details of our payment below.",
+		DocTransfer:          "Please find the transfer note below.",
+	}[kind]
+	d.Message = greeting + "\n\n" + body + "\n\nThank you,\n" + doc.Store.Name
+	return d, nil
+}
+
+// EmailDocument sends a document through the hub's mail server.
+func (a *App) EmailDocument(kind, id string, d EmailDraft) error {
+	if _, err := a.currentUser(protocol.RoleAdmin, protocol.RoleManager); err != nil {
+		return err
+	}
+	doc, _, err := a.buildDocument(kind, id)
+	if err != nil {
+		return err
+	}
+	doc.ForEmail = true
+	html, err := doc.HTML()
+	if err != nil {
+		return err
+	}
+	name := docName(doc)
+	msg := map[string]any{"to": []string{d.To}, "cc": []string{d.Cc}, "subject": d.Subject, "text": d.Message,
+		"html": string(html), "attachment": safeFileName(name) + ".html", "kind": kind, "ref": doc.Number}
+	if err := a.term.Admin(a.ctx, http.MethodPost, "/api/admin/email/send", msg, nil); err != nil {
+		return err
+	}
+	a.log.Info("document emailed", "kind", kind, "to", d.To)
+	return nil
 }
 
 func safeFileName(s string) string {

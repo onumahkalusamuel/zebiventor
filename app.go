@@ -54,6 +54,7 @@ type App struct {
 
 	approvals map[string]approval // one-time manager approvals
 	logFile   *appdata.LogFile
+	upd       updater
 }
 
 type approval struct {

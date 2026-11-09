@@ -21,6 +21,83 @@ export namespace discovery {
 
 }
 
+export namespace hub {
+	
+	export class BackupInfo {
+	    path: string;
+	    store_name: string;
+	    hub_id: string;
+	    same_store: boolean;
+	    taken_at: number;
+	    products: number;
+	    sales: number;
+	    last_sale_at: number;
+	    schema_version: number;
+	    problem: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BackupInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.store_name = source["store_name"];
+	        this.hub_id = source["hub_id"];
+	        this.same_store = source["same_store"];
+	        this.taken_at = source["taken_at"];
+	        this.products = source["products"];
+	        this.sales = source["sales"];
+	        this.last_sale_at = source["last_sale_at"];
+	        this.schema_version = source["schema_version"];
+	        this.problem = source["problem"];
+	    }
+	}
+	export class UpdateStatus {
+	    hub_version: string;
+	    packages: protocol.UpdatePackage[];
+	    feed_url: string;
+	    default_feed: string;
+	    last_check_at: number;
+	    last_check_error: string;
+	    signing_key: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.hub_version = source["hub_version"];
+	        this.packages = this.convertValues(source["packages"], protocol.UpdatePackage);
+	        this.feed_url = source["feed_url"];
+	        this.default_feed = source["default_feed"];
+	        this.last_check_at = source["last_check_at"];
+	        this.last_check_error = source["last_check_error"];
+	        this.signing_key = source["signing_key"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+
+}
+
 export namespace main {
 	
 	export class AccountPaymentResult {
@@ -261,6 +338,26 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class EmailDraft {
+	    to: string;
+	    cc: string;
+	    subject: string;
+	    message: string;
+	    ready: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new EmailDraft(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.to = source["to"];
+	        this.cc = source["cc"];
+	        this.subject = source["subject"];
+	        this.message = source["message"];
+	        this.ready = source["ready"];
+	    }
+	}
 	
 	export class ReturnResult {
 	    return?: protocol.Return;
@@ -364,6 +461,36 @@ export namespace main {
 	        this.terminal_name = source["terminal_name"];
 	        this.port = source["port"];
 	        this.demo = source["demo"];
+	    }
+	}
+	export class UpdateState {
+	    current: string;
+	    available: string;
+	    notes: string;
+	    signed: boolean;
+	    downloading: boolean;
+	    done: number;
+	    total: number;
+	    ready: string;
+	    error: string;
+	    can_install: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdateState(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.current = source["current"];
+	        this.available = source["available"];
+	        this.notes = source["notes"];
+	        this.signed = source["signed"];
+	        this.downloading = source["downloading"];
+	        this.done = source["done"];
+	        this.total = source["total"];
+	        this.ready = source["ready"];
+	        this.error = source["error"];
+	        this.can_install = source["can_install"];
 	    }
 	}
 
@@ -1089,6 +1216,32 @@ export namespace protocol {
 	        this.note = source["note"];
 	    }
 	}
+	export class StockTransferLine {
+	    variant_id: string;
+	    product_name: string;
+	    variant_name: string;
+	    sku: string;
+	    unit: string;
+	    qty_milli: number;
+	    received_qty_milli: number;
+	    cost_minor: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StockTransferLine(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.variant_id = source["variant_id"];
+	        this.product_name = source["product_name"];
+	        this.variant_name = source["variant_name"];
+	        this.sku = source["sku"];
+	        this.unit = source["unit"];
+	        this.qty_milli = source["qty_milli"];
+	        this.received_qty_milli = source["received_qty_milli"];
+	        this.cost_minor = source["cost_minor"];
+	    }
+	}
 	export class TerminalInfo {
 	    id: string;
 	    name: string;
@@ -1119,6 +1272,78 @@ export namespace protocol {
 	        this.app_version = source["app_version"];
 	    }
 	}
+	export class TransferReceipt {
+	    note: string;
+	    lines: StockTransferLine[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TransferReceipt(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.note = source["note"];
+	        this.lines = this.convertValues(source["lines"], StockTransferLine);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class UpdatePackage {
+	    manifest: update.Manifest;
+	    raw: string;
+	    signature: string;
+	    signed: boolean;
+	    stored_at: number;
+	    source: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new UpdatePackage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.manifest = this.convertValues(source["manifest"], update.Manifest);
+	        this.raw = source["raw"];
+	        this.signature = source["signature"];
+	        this.signed = source["signed"];
+	        this.stored_at = source["stored_at"];
+	        this.source = source["source"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class UserInput {
 	    id: string;
 	    name: string;
@@ -1142,6 +1367,75 @@ export namespace protocol {
 	        this.pin = source["pin"];
 	        this.active = source["active"];
 	    }
+	}
+
+}
+
+export namespace templates {
+	
+	export class Field {
+	    key: string;
+	    label: string;
+	    placeholder?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Field(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.key = source["key"];
+	        this.label = source["label"];
+	        this.placeholder = source["placeholder"];
+	    }
+	}
+	export class Template {
+	    type: string;
+	    label: string;
+	    description: string;
+	    categories: string[];
+	    units: string[];
+	    fields: Field[];
+	    payment_methods: protocol.PaymentMethod[];
+	    tax_mode: string;
+	    tax_name: string;
+	    default_tax_bp: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Template(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.label = source["label"];
+	        this.description = source["description"];
+	        this.categories = source["categories"];
+	        this.units = source["units"];
+	        this.fields = this.convertValues(source["fields"], Field);
+	        this.payment_methods = this.convertValues(source["payment_methods"], protocol.PaymentMethod);
+	        this.tax_mode = source["tax_mode"];
+	        this.tax_name = source["tax_name"];
+	        this.default_tax_bp = source["default_tax_bp"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }
@@ -1207,6 +1501,68 @@ export namespace terminal {
 	        this.payload = source["payload"];
 	        this.created_at = source["created_at"];
 	    }
+	}
+	export class IncomingTransfer {
+	    id: string;
+	    transfer_no: string;
+	    from_location_id: string;
+	    from_location_name: string;
+	    to_location_id: string;
+	    to_location_name: string;
+	    note: string;
+	    created_by: string;
+	    created_at: number;
+	    items_milli: number;
+	    status: string;
+	    received_by: string;
+	    received_at: number;
+	    receive_note: string;
+	    cost_minor: number;
+	    lines?: protocol.StockTransferLine[];
+	    received_here: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new IncomingTransfer(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.transfer_no = source["transfer_no"];
+	        this.from_location_id = source["from_location_id"];
+	        this.from_location_name = source["from_location_name"];
+	        this.to_location_id = source["to_location_id"];
+	        this.to_location_name = source["to_location_name"];
+	        this.note = source["note"];
+	        this.created_by = source["created_by"];
+	        this.created_at = source["created_at"];
+	        this.items_milli = source["items_milli"];
+	        this.status = source["status"];
+	        this.received_by = source["received_by"];
+	        this.received_at = source["received_at"];
+	        this.receive_note = source["receive_note"];
+	        this.cost_minor = source["cost_minor"];
+	        this.lines = this.convertValues(source["lines"], protocol.StockTransferLine);
+	        this.received_here = source["received_here"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class Item {
 	    variant_id: string;
@@ -1607,6 +1963,10 @@ export namespace terminal {
 	    pending: number;
 	    rejected: number;
 	    rev: number;
+	    hub_version: string;
+	    update_version: string;
+	    version_error: string;
+	    resent: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -1623,6 +1983,10 @@ export namespace terminal {
 	        this.pending = source["pending"];
 	        this.rejected = source["rejected"];
 	        this.rev = source["rev"];
+	        this.hub_version = source["hub_version"];
+	        this.update_version = source["update_version"];
+	        this.version_error = source["version_error"];
+	        this.resent = source["resent"];
 	    }
 	}
 	export class User {
@@ -1641,6 +2005,35 @@ export namespace terminal {
 	        this.name = source["name"];
 	        this.username = source["username"];
 	        this.role = source["role"];
+	    }
+	}
+
+}
+
+export namespace update {
+	
+	export class Manifest {
+	    version: string;
+	    platform: string;
+	    file: string;
+	    sha256: string;
+	    size: number;
+	    notes?: string;
+	    released_at?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Manifest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.platform = source["platform"];
+	        this.file = source["file"];
+	        this.sha256 = source["sha256"];
+	        this.size = source["size"];
+	        this.notes = source["notes"];
+	        this.released_at = source["released_at"];
 	    }
 	}
 

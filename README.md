@@ -35,6 +35,24 @@ The hub can run in any of three places:
 | Headless on a back-office PC | `zebihub init …` then `zebihub service install && zebihub service start` |
 | Headless on a till, in the background | Same as above on that till; the till app then **joins** `127.0.0.1` |
 
+### Branches (several shops, one hub)
+
+Everything is on the hub, so all shops share one hub. A branch's tills and
+back office reach it over a private network such as **Tailscale** or
+**ZeroTier** (free for small setups): install it on the hub PC and on each
+branch PC, then pair the branch till by typing the hub's private address
+(e.g. `100.64.0.5`) when joining, and pick the branch's location for it.
+
+When the internet drops, a branch keeps selling and **receiving transfers**
+(Stock → *On its way here*); both are queued on the till and
+reach the hub when the link returns. Sending a transfer, purchasing and
+reports need the link at that moment.
+
+A **transfer** is a record at the hub: goods leave location A when sent
+(*in transit*) and enter B when someone at B counts them in. Nothing travels
+by itself: the hub tells B's tills what is on its way, and B's receipt
+travels back to the hub with the next sync.
+
 ## How the important parts work
 
 **Write queue (`internal/store`).** Each database has exactly one writer
@@ -112,6 +130,21 @@ the hub's records, so they need the hub to be reachable. Selling stays offline-c
 - *Catalogue import/export:* CSV with flexible headers (name/title, price,
   cost, barcode/ISBN, category, any extra column becomes a product detail). It
   previews (dry run) before applying; rows with problems are listed and skipped.
+- *Shop types:* bookshop, grocery, pharmacy, distributor, fashion, hardware or
+  general retail set the product details asked for, units, categories,
+  payment methods and tax defaults. Switching later only adds what's missing.
+- *Backups:* daily, on the hub PC and copied to a second drive, USB stick or
+  network folder, with a warning when they stop. Restore (Settings → Backups,
+  or `zebihub restore FILE`) keeps the current data as a backup first; tills
+  notice and re-send whatever the backup was missing.
+- *Updates:* the hub holds the newest version (downloaded from the update
+  address, or loaded from a file brought on a USB stick); tills download it
+  from the hub over the LAN and install with one click. Releases are signed
+  (`cmd/zebirelease`); tills and hub refuse unsigned or tampered files. Tills
+  and hub tell each other their versions, and a till on an incompatible
+  version is told clearly which side to update.
+- *Email:* purchase orders, statements and payment advice can be emailed from
+  the hub's mail server (SMTP settings, password kept on the hub).
 - *Approval rules:* each manager-approval requirement (discount, price
   change, refund, paid out, no sale) can be switched off in Settings.
 
@@ -131,6 +164,7 @@ go test -race ./internal/...      # unit + end-to-end tests (5 tills, offline, r
 wails build                       # desktop app for this OS
 wails build -platform windows/amd64
 ./scripts/build-windows.sh        # Windows installer (needs NSIS: brew install makensis)
+./scripts/release.sh "notes"      # signed release in dist/ (see cmd/zebirelease)
 go build -o zebihub ./cmd/zebihub # headless hub
 ```
 
@@ -153,6 +187,9 @@ internal/hub           hub: schema, pairing, auth, sync, catalogue, backups
 internal/terminal      till: local DB, outbox, sync client, sales
 internal/printing      receipt layout, raster rendering, ESC/POS, printer transports
 internal/documents     A4 documents (purchase order, statements…) as printable HTML
+internal/templates     starting set-up per type of shop
+internal/update        update packages: manifest, signature, checks
+cmd/zebirelease        signs installers into releases / update files
 internal/discovery     mDNS advertise/browse
 internal/protocol      wire types shared by hub and tills
 frontend/              React + TypeScript + Tailwind v4 + shadcn/ui

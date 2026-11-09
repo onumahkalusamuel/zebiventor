@@ -11,9 +11,13 @@ import (
 func (h *Hub) SeedDemo(ctx context.Context) error {
 	cats := map[string]string{}
 	for _, name := range []string{"Fiction", "Non-fiction", "Children", "Stationery"} {
-		id, err := h.SaveCategory(ctx, SystemSession, protocol.Category{Name: name})
-		if err != nil {
-			return err
+		var id string
+		_ = h.db.R().QueryRowContext(ctx, "SELECT id FROM categories WHERE lower(name)=lower(?)", name).Scan(&id)
+		if id == "" {
+			var err error
+			if id, err = h.SaveCategory(ctx, SystemSession, protocol.Category{Name: name}); err != nil {
+				return err
+			}
 		}
 		cats[name] = id
 	}

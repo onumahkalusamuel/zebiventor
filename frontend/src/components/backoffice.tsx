@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CloudOff, Download, Loader2, Printer, Search } from "lucide-react"
 import { toast } from "sonner"
+import { EmailButton } from "@/components/email-document"
 import { EmptyState } from "@/components/page"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api, errorMessage } from "@/lib/api"
-import { formatQty } from "@/lib/format"
+import { can, formatQty } from "@/lib/format"
 import { hub } from "@/lib/hub"
 import { useLoadedState, useMoney } from "@/lib/state"
 import type { DocumentKind, StockReportRow } from "@/lib/types"
@@ -316,7 +317,8 @@ export async function printDocument(kind: DocumentKind, id: string) {
 
 export function PrintButton({ kind, id, label = "Print", variant = "outline" }: { kind: DocumentKind; id: string; label?: string; variant?: "outline" | "ghost" }) {
   const [busy, setBusy] = useState(false)
-  return (
+  const state = useLoadedState()
+  const print = (
     <Button
       variant={variant}
       disabled={busy}
@@ -328,5 +330,12 @@ export function PrintButton({ kind, id, label = "Print", variant = "outline" }: 
     >
       {busy ? <Loader2 className="animate-spin" /> : <Printer />} {label}
     </Button>
+  )
+  if (!can(state.user?.role, "admin", "manager")) return print
+  return (
+    <>
+      {print}
+      <EmailButton kind={kind} id={id} variant={variant} />
+    </>
   )
 }

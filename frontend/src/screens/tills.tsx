@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { api, errorMessage } from "@/lib/api"
-import { can, timeAgo } from "@/lib/format"
+import { can, compareVersions, timeAgo } from "@/lib/format"
 import { useLoadedState } from "@/lib/state"
 import type { PairingCode, TerminalInfo } from "@/lib/types"
 
@@ -49,6 +49,7 @@ export function Tills() {
                   <TableHead>Location</TableHead>
                   <TableHead>Last seen</TableHead>
                   <TableHead>Address</TableHead>
+                  <TableHead>Version</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="pr-4" />
                 </TableRow>
@@ -56,7 +57,7 @@ export function Tills() {
               <TableBody>
                 {terminals.isLoading && (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-10 text-center">
+                    <TableCell colSpan={8} className="py-10 text-center">
                       <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
                     </TableCell>
                   </TableRow>
@@ -76,6 +77,14 @@ export function Tills() {
                       <TableCell className="text-muted-foreground">{t.location_name}</TableCell>
                       <TableCell className="text-muted-foreground">{timeAgo(t.last_seen_at)}</TableCell>
                       <TableCell className="text-muted-foreground tabular">{t.last_ip}</TableCell>
+                      <TableCell className="tabular">
+                        {t.app_version || "—"}
+                        {t.active && state.status.hub_version && t.app_version && compareVersions(t.app_version, state.status.hub_version) < 0 && (
+                          <Badge variant="outline" className="ml-2 border-amber-500/50 text-amber-700 dark:text-amber-400" title={`The hub is on ${state.status.hub_version}`}>
+                            Older than hub
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {!t.active ? (
                           <Badge variant="outline">Revoked</Badge>

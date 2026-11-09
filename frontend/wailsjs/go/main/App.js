@@ -26,6 +26,14 @@ export function CheckHub(arg1) {
   return window['go']['main']['App']['CheckHub'](arg1);
 }
 
+export function ChooseBackupFile() {
+  return window['go']['main']['App']['ChooseBackupFile']();
+}
+
+export function ChooseFolder(arg1) {
+  return window['go']['main']['App']['ChooseFolder'](arg1);
+}
+
 export function CloseShift(arg1, arg2) {
   return window['go']['main']['App']['CloseShift'](arg1, arg2);
 }
@@ -50,6 +58,18 @@ export function DiscoverHubs() {
   return window['go']['main']['App']['DiscoverHubs']();
 }
 
+export function DocumentEmailDraft(arg1, arg2) {
+  return window['go']['main']['App']['DocumentEmailDraft'](arg1, arg2);
+}
+
+export function DownloadUpdate() {
+  return window['go']['main']['App']['DownloadUpdate']();
+}
+
+export function EmailDocument(arg1, arg2, arg3) {
+  return window['go']['main']['App']['EmailDocument'](arg1, arg2, arg3);
+}
+
 export function GetDiagnostics() {
   return window['go']['main']['App']['GetDiagnostics']();
 }
@@ -66,6 +86,10 @@ export function GetState() {
   return window['go']['main']['App']['GetState']();
 }
 
+export function GetUpdateState() {
+  return window['go']['main']['App']['GetUpdateState']();
+}
+
 export function HeldSales() {
   return window['go']['main']['App']['HeldSales']();
 }
@@ -76,6 +100,18 @@ export function HoldSale(arg1) {
 
 export function HubCall(arg1, arg2, arg3) {
   return window['go']['main']['App']['HubCall'](arg1, arg2, arg3);
+}
+
+export function IncomingTransfers() {
+  return window['go']['main']['App']['IncomingTransfers']();
+}
+
+export function InspectBackupFile(arg1) {
+  return window['go']['main']['App']['InspectBackupFile'](arg1);
+}
+
+export function InstallUpdate() {
+  return window['go']['main']['App']['InstallUpdate']();
 }
 
 export function JoinHub(arg1, arg2, arg3) {
@@ -100,6 +136,10 @@ export function ListTerminals() {
 
 export function ListUsers() {
   return window['go']['main']['App']['ListUsers']();
+}
+
+export function LoadUpdateFile() {
+  return window['go']['main']['App']['LoadUpdateFile']();
 }
 
 export function Login(arg1, arg2) {
@@ -166,8 +206,16 @@ export function ReceiveAccountPayment(arg1) {
   return window['go']['main']['App']['ReceiveAccountPayment'](arg1);
 }
 
+export function ReceiveTransferHere(arg1, arg2) {
+  return window['go']['main']['App']['ReceiveTransferHere'](arg1, arg2);
+}
+
 export function RecentSales(arg1) {
   return window['go']['main']['App']['RecentSales'](arg1);
+}
+
+export function RestoreBackup(arg1) {
+  return window['go']['main']['App']['RestoreBackup'](arg1);
 }
 
 export function RetryRejected() {
@@ -240,6 +288,10 @@ export function ShiftMovements(arg1) {
 
 export function ShiftPreview(arg1) {
   return window['go']['main']['App']['ShiftPreview'](arg1);
+}
+
+export function ShopTemplates() {
+  return window['go']['main']['App']['ShopTemplates']();
 }
 
 export function SyncNow() {

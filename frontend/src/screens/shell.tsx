@@ -3,6 +3,7 @@ import { BarChart3, Boxes, Clock, Truck, Warehouse, LogOut, MonitorSmartphone, M
 import { ApprovalProvider } from "@/components/approval"
 import { useShift } from "@/components/shift-gate"
 import { LogoMark } from "@/components/brand"
+import { Notices } from "@/components/notices"
 import { SyncPill } from "@/components/sync-pill"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { api } from "@/lib/api"
@@ -97,7 +98,9 @@ function ShellInner() {
   const [page, setPage] = useState<PageKey>(allowed[0].key)
   const now = useClock()
   const [dark, setDark] = useTheme()
-  const Current = (allowed.find((p) => p.key === page) ?? allowed[0]).el
+  const [settingsTab, setSettingsTab] = useState<string | undefined>()
+  const current = allowed.find((p) => p.key === page) ?? allowed[0]
+  const Current = current.el
 
   // F-key navigation, as on most retail systems.
   useEffect(() => {
@@ -181,8 +184,14 @@ function ShellInner() {
             </div>
           </div>
         </header>
+        <Notices
+          openSettings={(tab) => {
+            setSettingsTab(tab)
+            setPage("settings")
+          }}
+        />
         <main className="min-h-0 flex-1 overflow-hidden">
-          <Current />
+          {current.key === "settings" ? <Settings key={settingsTab} initialTab={settingsTab} /> : <Current />}
         </main>
       </div>
     </div>

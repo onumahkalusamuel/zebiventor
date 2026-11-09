@@ -13,7 +13,10 @@ import (
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
 )
 
-const maxBody = 16 << 20
+const (
+	maxBody   = 16 << 20
+	maxUpload = 600 << 20 // update packages
+)
 
 type ctxKey int
 
@@ -44,6 +47,8 @@ func (h *Hub) Handler() http.Handler {
 		wait, _ := strconv.Atoi(r.URL.Query().Get("wait"))
 		wait = min(max(wait, 0), 30)
 		resp, err := h.Pull(r.Context(), since, time.Duration(wait)*time.Second)
+		h.versionHeaders(w, r) // things may have changed during the long poll
+		w.Header().Set(HeaderRev, strconv.FormatInt(h.currentRev(r.Context()), 10))
 		respond(w, resp, err)
 	}))
 	mux.Handle("POST /api/sync/push", h.terminal(func(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +151,7 @@ func (h *Hub) Handler() http.Handler {
 	}))
 
 	h.backOfficeRoutes(mux)
+	h.opsRoutes(mux)
 	return recoverer(h, mux)
 }
 
@@ -377,16 +383,57 @@ func (h *Hub) backOfficeRoutes(mux *http.ServeMux) {
 	})
 }
 
-func (h *Hub) terminal(next http.HandlerFunc) http.Handler {
+// Headers tills and hub exchange on every request so each side knows the
+// other's version.
+const (
+	HeaderVersion    = "X-Zebi-Version"     // app version of the sender
+	HeaderProtocol   = "X-Zebi-Protocol"    // sync protocol version of the sender
+	HeaderPlatform   = "X-Zebi-Platform"    // till's GOOS/GOARCH
+	HeaderHubVersion = "X-Zebi-Hub-Version" // hub's app version
+	HeaderEpoch      = "X-Zebi-Epoch"       // changes when a backup is restored
+	HeaderUpdate     = "X-Zebi-Update"      // newest version the hub holds for the till's platform
+	HeaderRev        = "X-Zebi-Rev"         // hub's latest change number (on pulls)
+)
+
+func (h *Hub) terminal(next http.HandlerFunc) http.Handler { return h.terminalAuth(next, true) }
+
+// terminalAuth authenticates the till. With checkVersion, a till on a
+// different sync protocol is refused with a clear message (it can still
+// reach the update endpoints, which use checkVersion=false).
+func (h *Hub) terminalAuth(next http.HandlerFunc, checkVersion bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		t, err := h.AuthTerminal(r.Context(), tok, clientIP(r))
+		t, err := h.AuthTerminal(r.Context(), tok, clientIP(r), r.Header.Get(HeaderVersion))
 		if err != nil {
 			respond(w, nil, err)
 			return
 		}
+		if p := r.Header.Get(HeaderProtocol); checkVersion && p != "" && p != strconv.Itoa(protocol.Version) {
+			n, _ := strconv.Atoi(p)
+			msg := "This till is older than the hub (hub " + h.cfg.Version + "). Update this till to keep syncing."
+			if n > protocol.Version {
+				msg = "The hub is older than this till (hub " + h.cfg.Version + "). Update the hub PC to keep syncing."
+			}
+			writeJSON(w, http.StatusConflict, protocol.APIError{Error: msg, Code: "version"})
+			return
+		}
 		next(w, r.WithContext(context.WithValue(r.Context(), keyTerminal, t)))
 	})
+}
+
+// versionHeaders tells the till about the hub on every response.
+func (h *Hub) versionHeaders(w http.ResponseWriter, r *http.Request) {
+	hd := w.Header()
+	hd.Set(HeaderHubVersion, h.cfg.Version)
+	hd.Set(HeaderProtocol, strconv.Itoa(protocol.Version))
+	if h.epoch != "" {
+		hd.Set(HeaderEpoch, h.epoch)
+	}
+	if p := r.Header.Get(HeaderPlatform); p != "" {
+		if pkg, _ := h.AvailableUpdate(p); pkg != nil {
+			hd.Set(HeaderUpdate, pkg.Manifest.Version)
+		}
+	}
 }
 
 func (h *Hub) session(next func(http.ResponseWriter, *http.Request, *Session)) http.Handler {
@@ -409,7 +456,12 @@ func recoverer(h *Hub, next http.Handler) http.Handler {
 				writeJSON(w, http.StatusInternalServerError, protocol.APIError{Error: "internal error"})
 			}
 		}()
-		r.Body = http.MaxBytesReader(w, r.Body, maxBody)
+		limit := int64(maxBody)
+		if r.URL.Path == "/api/admin/update/upload" {
+			limit = maxUpload
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		h.versionHeaders(w, r)
 		next.ServeHTTP(w, r)
 	})
 }

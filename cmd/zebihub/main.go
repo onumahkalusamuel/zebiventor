@@ -39,6 +39,7 @@ Usage:
   zebihub init       --store NAME --admin-name NAME --admin-user USER [--business TYPE] [--demo]
   zebihub pair-code  [--data DIR] [--name "Till 2"]  issue a pairing code for a new till
   zebihub backup     [--data DIR]                  write a backup now
+  zebihub restore    [--data DIR] FILE.db          replace the store's data with a backup (hub stopped)
   zebihub status     [--data DIR]
   zebihub service    install|uninstall|start|stop|restart|status [--data DIR] [--port 7420]
 
@@ -62,6 +63,8 @@ func main() {
 		err = cmdPairCode(args)
 	case "backup":
 		err = cmdBackup(args)
+	case "restore":
+		err = cmdRestore(args)
 	case "status":
 		err = cmdStatus(args)
 	case "service":
@@ -233,10 +236,67 @@ func cmdBackup(args []string) error {
 		return err
 	}
 	defer h.Close()
-	if err := h.Backup(context.Background()); err != nil {
+	path, err := h.Backup(context.Background())
+	if path != "" {
+		fmt.Println("Backup written to", path)
+	}
+	return err
+}
+
+// cmdRestore replaces the store's data with a backup. The hub must be
+// stopped; the current data is kept as a backup first.
+func cmdRestore(args []string) error {
+	fs := flag.NewFlagSet("restore", flag.ExitOnError)
+	dir := fs.String("data", appdata.Dir(), "data directory")
+	port := fs.Int("port", hub.DefaultPort, "TCP port the hub uses")
+	yes := fs.Bool("yes", false, "do not ask for confirmation")
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: zebihub restore [--data DIR] BACKUP.db")
+	}
+	file := fs.Arg(0)
+	if c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", *port), time.Second); err == nil {
+		c.Close()
+		return fmt.Errorf("the hub is running; stop it first (zebihub service stop)")
+	}
+	ctx := context.Background()
+	h, err := openHub(*dir)
+	if err != nil {
 		return err
 	}
-	fmt.Println("Backup written to", filepath.Join(*dir, "backups"))
+	cur, _ := h.Setting(ctx, "hub_id")
+	info, err := hub.InspectBackup(ctx, file, cur)
+	if err != nil {
+		h.Close()
+		return err
+	}
+	if info.Problem != "" {
+		h.Close()
+		return fmt.Errorf("%s", info.Problem)
+	}
+	fmt.Printf("Backup of %q: %d products, %d sales, last activity %s\n", info.StoreName, info.Products, info.Sales,
+		time.UnixMilli(info.TakenAt).Format("2 Jan 2006 15:04"))
+	if !info.SameStore {
+		fmt.Println("WARNING: this backup is from a different store than the one on this PC.")
+	}
+	if !*yes {
+		fmt.Print("Replace the store's data with this backup? Type yes: ")
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		if strings.TrimSpace(line) != "yes" {
+			h.Close()
+			return fmt.Errorf("cancelled")
+		}
+	}
+	safety, err := h.SafetyBackup(ctx)
+	h.Close()
+	if err != nil {
+		return fmt.Errorf("could not save the current data first: %w", err)
+	}
+	fmt.Println("Current data saved to", safety)
+	if err := hub.RestoreFile(ctx, *dir, file); err != nil {
+		return err
+	}
+	fmt.Println("Restored. Start the hub again; tills will catch up and re-send recent sales.")
 	return nil
 }
 

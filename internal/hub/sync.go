@@ -39,6 +39,9 @@ func (h *Hub) Pull(ctx context.Context, since int64, wait time.Duration) (*proto
 		case <-ctx.Done():
 			timer.Stop()
 			return resp, nil
+		case <-h.bgCtx.Done(): // hub closing: let the till reconnect
+			timer.Stop()
+			return resp, nil
 		}
 	}
 }
@@ -130,7 +133,9 @@ func fetchChunk(ctx context.Context, tx *sql.Tx, entity string, idList []string,
 		return q("SELECT key,value FROM settings WHERE key IN ("+in+")", func(r *sql.Rows) error {
 			var s protocol.Setting
 			err := r.Scan(&s.Key, &s.Value)
-			resp.Settings = append(resp.Settings, s)
+			if !isPrivateSetting(s.Key) {
+				resp.Settings = append(resp.Settings, s)
+			}
 			return err
 		})
 	case protocol.EntityLocation:
@@ -206,6 +211,23 @@ func fetchChunk(ctx context.Context, tx *sql.Tx, entity string, idList []string,
 			resp.StockLevels = append(resp.StockLevels, s)
 		}
 		return nil
+	case protocol.EntityTransfer:
+		var list []protocol.StockTransfer
+		if err := q(transferSelect+" WHERE t.id IN ("+in+")", func(r *sql.Rows) error {
+			t, err := scanTransfer(r)
+			list = append(list, t)
+			return err
+		}); err != nil {
+			return err
+		}
+		for i := range list {
+			var err error
+			if list[i].Lines, err = transferLines(ctx, tx, list[i].ID); err != nil {
+				return err
+			}
+		}
+		resp.Transfers = append(resp.Transfers, list...)
+		return nil
 	}
 	return nil // unknown entity: newer hub feature, ignore
 }
@@ -262,6 +284,8 @@ func (h *Hub) applyOp(ctx context.Context, t *Terminal, op protocol.Op) (protoco
 			applyErr = h.applyCustomer(ctx, tx, t, op)
 		case protocol.OpAccountPayment:
 			applyErr = h.applyAccountPayment(ctx, tx, t, op)
+		case protocol.OpTransferIn:
+			applyErr = applyTransferIn(ctx, tx, t, op)
 		default:
 			applyErr = invalid("unsupported op kind %q", op.Kind)
 		}

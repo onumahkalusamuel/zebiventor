@@ -1,8 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Banknote, FolderOpen, LifeBuoy, Loader2, Plus, Printer, RefreshCw, Save, Server } from "lucide-react"
 import { toast } from "sonner"
 import { Page, PageHeader } from "@/components/page"
+import { Section, SwitchRow } from "@/components/section"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,25 +12,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { api, errorMessage } from "@/lib/api"
-import { businessTypes, can, timeAgo } from "@/lib/format"
+import { can, timeAgo } from "@/lib/format"
 import { useAppState, useLoadedState } from "@/lib/state"
+import { BackupSettings, EmailSettingsPanel, ShopTypeSettings, UpdateSettings } from "@/screens/settings-ops"
 import type { PaymentMethod, PrinterConfig } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
-export function Settings() {
+export function Settings({ initialTab }: { initialTab?: string }) {
   const state = useLoadedState()
   const role = state.user?.role
   const tabs = [
     { key: "printer", label: "Printer", show: can(role, "admin", "manager") },
     { key: "store", label: "Store", show: can(role, "admin") },
+    { key: "shop", label: "Shop type", show: can(role, "admin") },
     { key: "payments", label: "Payment methods", show: can(role, "admin") },
+    { key: "backups", label: "Backups", show: can(role, "admin", "manager") },
+    { key: "updates", label: "Updates", show: can(role, "admin", "manager") },
+    { key: "email", label: "Email", show: can(role, "admin") },
     { key: "connection", label: "Connection", show: true },
   ].filter((t) => t.show)
 
   return (
     <Page>
       <PageHeader title="Settings" />
-      <Tabs defaultValue={tabs[0].key} className="px-8 pb-8">
+      <Tabs defaultValue={tabs.find((t) => t.key === initialTab)?.key ?? tabs[0].key} className="px-8 pb-8">
         <TabsList>
           {tabs.map((t) => (
             <TabsTrigger key={t.key} value={t.key}>
@@ -43,38 +49,26 @@ export function Settings() {
         <TabsContent value="store" className="pt-4">
           <StoreSettings />
         </TabsContent>
+        <TabsContent value="shop" className="pt-4">
+          <ShopTypeSettings />
+        </TabsContent>
         <TabsContent value="payments" className="pt-4">
           <PaymentSettings />
+        </TabsContent>
+        <TabsContent value="backups" className="pt-4">
+          <BackupSettings />
+        </TabsContent>
+        <TabsContent value="updates" className="pt-4">
+          <UpdateSettings />
+        </TabsContent>
+        <TabsContent value="email" className="pt-4">
+          <EmailSettingsPanel />
         </TabsContent>
         <TabsContent value="connection" className="pt-4">
           <ConnectionSettings />
         </TabsContent>
       </Tabs>
     </Page>
-  )
-}
-
-function Section({ title, description, children, className }: { title: string; description?: string; children: ReactNode; className?: string }) {
-  return (
-    <section className={cn("rounded-xl border bg-card p-5", className)}>
-      <div className="mb-4">
-        <h3 className="font-medium">{title}</h3>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function SwitchRow({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-center justify-between gap-4 py-2">
-      <div>
-        <div className="text-sm font-medium">{label}</div>
-        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
-      </div>
-      <Switch checked={checked} onCheckedChange={onChange} />
-    </label>
   )
 }
 
@@ -248,7 +242,7 @@ function PrinterSettings() {
 
 // ---------- store ----------
 
-const storeKeys = ["store_name", "business_type", "store_address", "store_phone", "store_email", "tax_id", "currency_code", "currency_symbol", "receipt_header", "receipt_footer", "tax_mode", "tax_name",
+const storeKeys = ["store_name", "store_address", "store_phone", "store_email", "tax_id", "currency_code", "currency_symbol", "receipt_header", "receipt_footer", "tax_mode", "tax_name", "default_tax_bp",
   "approval_discount", "approval_price_override", "approval_refund", "approval_paid_out", "approval_no_sale"]
 
 const approvalRules: { key: string; label: string; hint: string }[] = [
@@ -269,7 +263,9 @@ function StoreSettings() {
   async function save() {
     setBusy(true)
     try {
-      await api.saveStoreSettings(v)
+      const out = { ...v }
+      if (out.default_tax_bp === "") delete out.default_tax_bp
+      await api.saveStoreSettings(out)
       toast.success("Store settings saved. Every till will update.")
       setTimeout(refresh, 800)
     } catch (e) {
@@ -291,21 +287,6 @@ function StoreSettings() {
       <Section title="Business">
         <div className="grid grid-cols-2 gap-4">
           {field("store_name", "Store name")}
-          <div className="space-y-1.5">
-            <Label>Type of business</Label>
-            <Select value={v.business_type} onValueChange={(x) => set("business_type", x)}>
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {businessTypes.map((b) => (
-                  <SelectItem key={b.value} value={b.value}>
-                    {b.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
           {field("store_address", "Address")}
           {field("store_phone", "Phone")}
           {field("store_email", "Email")}
@@ -330,6 +311,15 @@ function StoreSettings() {
             </Select>
           </div>
           {field("tax_name", "Tax name", { placeholder: "VAT" })}
+          <div className="space-y-1.5">
+            <Label>Rate for new products %</Label>
+            <Input
+              inputMode="decimal"
+              className="text-right tabular"
+              value={v.default_tax_bp === "" || v.default_tax_bp === undefined ? "" : String(Number(v.default_tax_bp) / 100)}
+              onChange={(e) => set("default_tax_bp", e.target.value.trim() === "" ? "" : String(Math.round((Number(e.target.value) || 0) * 100)))}
+            />
+          </div>
         </div>
       </Section>
       <Section title="Manager approval" description="What cashiers need a manager for. Managers and admins never need approval; who approved is recorded either way.">

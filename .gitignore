@@ -9,3 +9,6 @@ frontend/dist
 /zebiventor
 /zebiventor.exe
 build/windows/installer/tmp
+/dist
+release.key
+*.key

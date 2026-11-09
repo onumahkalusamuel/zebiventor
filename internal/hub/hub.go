@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"embed"
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"github.com/onumahkalusamuel/zebiventor/internal/ids"
 	"github.com/onumahkalusamuel/zebiventor/internal/protocol"
 	"github.com/onumahkalusamuel/zebiventor/internal/store"
+	"github.com/onumahkalusamuel/zebiventor/internal/templates"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -52,6 +52,11 @@ type Hub struct {
 	pairLimiter  *limiter
 	loginLimiter *limiter
 
+	backupMu sync.Mutex
+	upd      updateStore
+	epoch    string // data epoch, changes when a backup is restored
+
+	bgCtx    context.Context // done when the hub closes (ends long polls)
 	bgCancel context.CancelFunc
 	bgWG     sync.WaitGroup
 }
@@ -84,8 +89,17 @@ func Open(ctx context.Context, cfg Config) (*Hub, error) {
 		pairLimiter:  newLimiter(10, time.Minute),
 		loginLimiter: newLimiter(20, time.Minute),
 	}
+	if err := h.ensureEpoch(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := h.backfillShopSettings(ctx); err != nil {
+		db.Close()
+		return nil, err
+	}
+	h.loadUpdates()
 	bg, cancel := context.WithCancel(context.Background())
-	h.bgCancel = cancel
+	h.bgCtx, h.bgCancel = bg, cancel
 	h.bgWG.Add(1)
 	go h.maintenance(bg)
 	return h, nil
@@ -145,7 +159,7 @@ func (h *Hub) Setup(ctx context.Context, in SetupInput) error {
 	if in.LocationName == "" {
 		in.LocationName = "Main Store"
 	}
-	if in.BusinessType == "" {
+	if !templates.Known(in.BusinessType) {
 		in.BusinessType = "general"
 	}
 	if in.CurrencyCode == "" {
@@ -169,7 +183,6 @@ func (h *Hub) Setup(ctx context.Context, in SetupInput) error {
 		settings := map[string]string{
 			"hub_id":          ids.New(),
 			"store_name":      in.StoreName,
-			"business_type":   in.BusinessType,
 			"store_address":   in.Address,
 			"store_phone":     in.Phone,
 			"store_email":     "",
@@ -213,23 +226,7 @@ func (h *Hub) Setup(ctx context.Context, in SetupInput) error {
 			return err
 		}
 
-		methods := []protocol.PaymentMethod{
-			{Name: "Cash", Kind: protocol.PayCash, OpensDrawer: true, SortOrder: 1},
-			{Name: "POS / Card", Kind: protocol.PayCard, SortOrder: 2},
-			{Name: "Bank Transfer", Kind: protocol.PayTransfer, RequiresReference: true, SortOrder: 3},
-		}
-		for _, m := range methods {
-			m.ID, m.Active = ids.New(), true
-			if err := upsertPaymentMethod(ctx, tx, m, now); err != nil {
-				return err
-			}
-		}
-
-		catID := ids.New()
-		if _, err := tx.ExecContext(ctx, `INSERT INTO categories(id,name,active,created_at,updated_at) VALUES(?,?,1,?,?)`, catID, "General", now, now); err != nil {
-			return err
-		}
-		if err := recordChange(ctx, tx, protocol.EntityCategory, catID); err != nil {
+		if _, err := applyTemplate(ctx, tx, templates.Get(in.BusinessType), true, now); err != nil {
 			return err
 		}
 
@@ -277,14 +274,29 @@ func putSetting(ctx context.Context, tx *sql.Tx, key, value string, now int64) e
 	if err != nil {
 		return err
 	}
-	if privateSettings[key] || strings.HasPrefix(key, "seq.") {
+	if isPrivateSetting(key) {
 		return nil
 	}
 	return recordChange(ctx, tx, protocol.EntitySetting, key)
 }
 
-// privateSettings never leave the hub.
-var privateSettings = map[string]bool{"next_sku": true, "last_backup_at": true}
+// privateSettings never leave the hub (nor do keys with privatePrefixes).
+var (
+	privateSettings = map[string]bool{"next_sku": true, "last_backup_at": true, "data_epoch": true}
+	privatePrefixes = []string{"seq.", "backup_", "update_", "smtp_"}
+)
+
+func isPrivateSetting(key string) bool {
+	if privateSettings[key] {
+		return true
+	}
+	for _, p := range privatePrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // recordChange bumps the revision of an entity so terminals pull it.
 func recordChange(ctx context.Context, tx *sql.Tx, entity, id string) error {
@@ -330,39 +342,12 @@ func (h *Hub) runMaintenance(ctx context.Context) {
 	if !h.IsSetup(ctx) {
 		return
 	}
-	last, _ := h.Setting(ctx, "last_backup_at")
-	var lastMs int64
-	fmt.Sscan(last, &lastMs)
-	if now-lastMs < 20*3600*1000 {
-		return
+	if h.backupDue(ctx) {
+		if _, err := h.Backup(ctx); err != nil {
+			h.log.Error("scheduled backup failed", "err", err)
+		}
 	}
-	if err := h.Backup(ctx); err != nil {
-		h.log.Error("scheduled backup failed", "err", err)
-	}
-}
-
-// Backup writes a consistent snapshot to <DataDir>/backups and prunes old ones.
-func (h *Hub) Backup(ctx context.Context) error {
-	dir := filepath.Join(h.cfg.DataDir, "backups")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	dst := filepath.Join(dir, "hub-"+time.Now().Format("20060102-150405")+".db")
-	if err := h.db.Backup(ctx, dst); err != nil {
-		return err
-	}
-	_ = h.db.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		return putSetting(ctx, tx, "last_backup_at", fmt.Sprint(ids.NowMs()), ids.NowMs())
-	})
-	h.log.Info("backup written", "path", dst)
-
-	matches, _ := filepath.Glob(filepath.Join(dir, "hub-*.db"))
-	sort.Strings(matches)
-	for len(matches) > h.cfg.BackupKeep {
-		_ = os.Remove(matches[0])
-		matches = matches[1:]
-	}
-	return nil
+	h.maybeCheckForUpdates(ctx)
 }
 
 // ---------- notifier ----------

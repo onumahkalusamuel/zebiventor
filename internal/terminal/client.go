@@ -37,6 +37,10 @@ func isTerminalRevoked(err error) bool {
 
 type client struct {
 	http *http.Client
+	// headers adds the till's version to each request; onResponse sees
+	// every hub response's headers (set once at start-up).
+	headers    func(http.Header)
+	onResponse func(http.Header)
 }
 
 func newClient() *client {
@@ -87,11 +91,17 @@ func (c *client) do(ctx context.Context, timeout time.Duration, method, url, tok
 	if session != "" {
 		req.Header.Set("X-Session", session)
 	}
+	if c.headers != nil {
+		c.headers(req.Header)
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("hub unreachable: %w", err)
 	}
 	defer resp.Body.Close()
+	if c.onResponse != nil {
+		c.onResponse(resp.Header)
+	}
 	if resp.StatusCode >= 300 {
 		var ae protocol.APIError
 		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&ae)

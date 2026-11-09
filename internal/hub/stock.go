@@ -3,8 +3,10 @@ package hub
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -160,7 +162,7 @@ func (h *Hub) TransferStock(ctx context.Context, by *Session, in TransferInput) 
 			}
 		}
 		audit(ctx, tx, by.UserID, "", "stock.transfer", "stock_transfer", id, map[string]any{"no": no, "lines": len(in.Lines), "status": status})
-		return nil
+		return recordChange(ctx, tx, protocol.EntityTransfer, id)
 	})
 }
 
@@ -178,64 +180,101 @@ func (h *Hub) ReceiveTransfer(ctx context.Context, by *Session, id string, in pr
 		if err != nil {
 			return err
 		}
-		if t.Status != protocol.TransferInTransit {
-			return invalid("%s has already been %s", t.TransferNo, strings.ReplaceAll(t.Status, "_", " "))
-		}
-		got := map[string]int64{}
-		for _, l := range in.Lines {
-			if l.ReceivedQtyMilli < 0 {
-				return invalid("received quantity cannot be negative")
-			}
-			got[l.VariantID] = l.ReceivedQtyMilli
-		}
-		rows, err := tx.QueryContext(ctx, "SELECT id,variant_id,qty_milli FROM stock_transfer_lines WHERE transfer_id=? ORDER BY rowid", id)
-		if err != nil {
-			return err
-		}
-		type line struct {
-			id, variant string
-			sent, recv  int64
-		}
-		var lines []line
-		for rows.Next() {
-			var l line
-			if err := rows.Scan(&l.id, &l.variant, &l.sent); err != nil {
-				rows.Close()
-				return err
-			}
-			l.recv = l.sent
-			if q, ok := got[l.variant]; ok {
-				l.recv = q
-			}
-			lines = append(lines, l)
-		}
-		rows.Close()
-		now := ids.NowMs()
-		var short int64
-		for _, l := range lines {
-			if l.recv > l.sent {
-				v, _ := loadVariant(ctx, tx, l.variant)
-				return invalid("more %s received than was sent", v.label())
-			}
-			if _, err := tx.ExecContext(ctx, "UPDATE stock_transfer_lines SET received_qty_milli=? WHERE id=?", l.recv, l.id); err != nil {
-				return err
-			}
-			short += l.sent - l.recv
-			if l.recv == 0 {
-				continue
-			}
-			if err := addStock(ctx, tx, stockMove{VariantID: l.variant, LocationID: t.ToLocationID, DeltaMilli: l.recv, Reason: "transfer_in",
-				RefType: "transfer", RefID: id, UserID: by.UserID, CreatedAt: now}); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.ExecContext(ctx, "UPDATE stock_transfers SET status=?,received_by=?,received_at=?,receive_note=? WHERE id=?",
-			protocol.TransferReceived, by.UserID, now, trim(in.Note), id); err != nil {
-			return err
-		}
-		audit(ctx, tx, by.UserID, "", "stock.transfer_receive", "stock_transfer", id, map[string]any{"no": t.TransferNo, "short_milli": short})
-		return nil
+		return receiveTransfer(ctx, tx, &t, by.UserID, "", in, ids.NowMs())
 	})
+}
+
+// receiveTransfer books transfer t in, as received by userID at time now.
+func receiveTransfer(ctx context.Context, tx *sql.Tx, t *protocol.StockTransfer, userID, terminalID string, in protocol.TransferReceipt, now int64) error {
+	id := t.ID
+	if t.Status != protocol.TransferInTransit {
+		return invalid("%s has already been %s", t.TransferNo, strings.ReplaceAll(t.Status, "_", " "))
+	}
+	got := map[string]int64{}
+	for _, l := range in.Lines {
+		if l.ReceivedQtyMilli < 0 {
+			return invalid("received quantity cannot be negative")
+		}
+		got[l.VariantID] = l.ReceivedQtyMilli
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT id,variant_id,qty_milli FROM stock_transfer_lines WHERE transfer_id=? ORDER BY rowid", id)
+	if err != nil {
+		return err
+	}
+	type line struct {
+		id, variant string
+		sent, recv  int64
+	}
+	var lines []line
+	for rows.Next() {
+		var l line
+		if err := rows.Scan(&l.id, &l.variant, &l.sent); err != nil {
+			rows.Close()
+			return err
+		}
+		l.recv = l.sent
+		if q, ok := got[l.variant]; ok {
+			l.recv = q
+		}
+		lines = append(lines, l)
+	}
+	rows.Close()
+	var short int64
+	for _, l := range lines {
+		if l.recv > l.sent {
+			v, _ := loadVariant(ctx, tx, l.variant)
+			return invalid("more %s received than was sent", v.label())
+		}
+		if _, err := tx.ExecContext(ctx, "UPDATE stock_transfer_lines SET received_qty_milli=? WHERE id=?", l.recv, l.id); err != nil {
+			return err
+		}
+		short += l.sent - l.recv
+		if l.recv == 0 {
+			continue
+		}
+		if err := addStock(ctx, tx, stockMove{VariantID: l.variant, LocationID: t.ToLocationID, DeltaMilli: l.recv, Reason: "transfer_in",
+			RefType: "transfer", RefID: id, UserID: userID, CreatedAt: now}); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE stock_transfers SET status=?,received_by=?,received_at=?,receive_note=? WHERE id=?",
+		protocol.TransferReceived, userID, now, trim(in.Note), id); err != nil {
+		return err
+	}
+	audit(ctx, tx, userID, terminalID, "stock.transfer_receive", "stock_transfer", id, map[string]any{"no": t.TransferNo, "short_milli": short})
+	return recordChange(ctx, tx, protocol.EntityTransfer, id)
+}
+
+// applyTransferIn books in a transfer received at a till, possibly while
+// the till was offline. The till must be at the destination.
+func applyTransferIn(ctx context.Context, tx *sql.Tx, term *Terminal, op protocol.Op) error {
+	var in protocol.TransferReceiveOp
+	if err := json.Unmarshal(op.Payload, &in); err != nil {
+		return invalid("bad transfer payload: %v", err)
+	}
+	t, err := scanTransfer(tx.QueryRowContext(ctx, transferSelect+" WHERE t.id=?", in.TransferID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return invalid("transfer not found")
+	}
+	if err != nil {
+		return err
+	}
+	if t.ToLocationID != term.LocationID {
+		return invalid("%s is going to %s, not this till's location", t.TransferNo, t.ToLocationName)
+	}
+	var role string
+	var active bool
+	if err := tx.QueryRowContext(ctx, "SELECT role,active FROM users WHERE id=?", in.UserID).Scan(&role, &active); err != nil || !active {
+		return invalid("the person who received %s is not a current user", t.TransferNo)
+	}
+	if !slices.Contains(catalogRoles, role) {
+		return invalid("receiving stock needs a manager or stock keeper")
+	}
+	at := in.ReceivedAt
+	if at <= 0 || at > ids.NowMs()+24*3600*1000 {
+		at = ids.NowMs()
+	}
+	return receiveTransfer(ctx, tx, &t, in.UserID, term.ID, in.TransferReceipt, at)
 }
 
 // CancelTransfer returns an in-transit transfer to where it came from.
@@ -280,7 +319,7 @@ func (h *Hub) CancelTransfer(ctx context.Context, by *Session, id string) error 
 			return err
 		}
 		audit(ctx, tx, by.UserID, "", "stock.transfer_cancel", "stock_transfer", id, map[string]any{"no": t.TransferNo})
-		return nil
+		return recordChange(ctx, tx, protocol.EntityTransfer, id)
 	})
 }
 
@@ -336,21 +375,31 @@ func (h *Hub) GetTransfer(ctx context.Context, by *Session, id string) (*protoco
 	if err != nil {
 		return nil, err
 	}
-	rows, err := h.db.R().QueryContext(ctx, `SELECT l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),COALESCE(p.unit,''),
+	t.Lines, err = transferLines(ctx, h.db.R(), t.ID)
+	return &t, err
+}
+
+type queryer interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+func transferLines(ctx context.Context, q queryer, id string) ([]protocol.StockTransferLine, error) {
+	rows, err := q.QueryContext(ctx, `SELECT l.variant_id,COALESCE(p.name,''),COALESCE(v.name,''),COALESCE(v.sku,''),COALESCE(p.unit,''),
 		l.qty_milli,l.received_qty_milli,COALESCE(v.cost_minor,0)
-		FROM stock_transfer_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id WHERE l.transfer_id=? ORDER BY l.rowid`, t.ID)
+		FROM stock_transfer_lines l LEFT JOIN variants v ON v.id=l.variant_id LEFT JOIN products p ON p.id=v.product_id WHERE l.transfer_id=? ORDER BY l.rowid`, id)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	var out []protocol.StockTransferLine
 	for rows.Next() {
 		var l protocol.StockTransferLine
 		if err := rows.Scan(&l.VariantID, &l.ProductName, &l.VariantName, &l.SKU, &l.Unit, &l.QtyMilli, &l.ReceivedQtyMilli, &l.CostMinor); err != nil {
 			return nil, err
 		}
-		t.Lines = append(t.Lines, l)
+		out = append(out, l)
 	}
-	return &t, rows.Err()
+	return out, rows.Err()
 }
 
 // ---------- stock counts ----------

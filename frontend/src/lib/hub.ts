@@ -82,6 +82,22 @@ export const hub = {
 
   importProducts: (csv: string, dry_run: boolean, location_id = "") => call<T.ImportResult>("POST", "/api/admin/import/products", { csv, dry_run, location_id }),
   exportProducts: (location = "") => call<{ csv: string }>("GET", "/api/admin/export/products" + qs({ location })),
+
+  templates: () => call<T.ShopTemplate[]>("GET", "/api/admin/templates"),
+  applyTemplate: (type: string, with_tax: boolean) => call<T.TemplateResult>("POST", "/api/admin/templates/apply", { type, with_tax }),
+
+  backups: () => call<T.BackupStatus>("GET", "/api/admin/backups"),
+  backupNow: () => call<T.BackupStatus>("POST", "/api/admin/backups", {}),
+  saveBackupSettings: (copy_folder: string, keep: number) => call<T.BackupStatus>("PUT", "/api/admin/backups/settings", { copy_folder, keep }),
+
+  updateStatus: () => call<T.HubUpdateStatus>("GET", "/api/admin/update"),
+  checkForUpdates: () => call<T.HubUpdateStatus>("POST", "/api/admin/update/check", {}),
+  saveUpdateFeed: (feed_url: string) => call<T.HubUpdateStatus>("PUT", "/api/admin/update/settings", { feed_url }),
+
+  emailSettings: () => call<T.EmailSettings>("GET", "/api/admin/email"),
+  saveEmailSettings: (s: T.EmailSettings) => call<void>("PUT", "/api/admin/email", s),
+  sendTestEmail: (to: string) =>
+    call<void>("POST", "/api/admin/email/send", { to: [to], subject: "Test email from Zebiventor", text: "If you can read this, email is set up correctly.", kind: "test" }),
 }
 
 /** Builds CSV text from rows (quotes as needed). */

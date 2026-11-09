@@ -46,7 +46,7 @@
 </style>
 </head>
 <body>
-<div class="bar"><button class="primary" onclick="window.print()">Print / Save as PDF</button><button onclick="window.close()">Close</button></div>
+{{if not .ForEmail}}<div class="bar"><button class="primary" onclick="window.print()">Print / Save as PDF</button><button onclick="window.close()">Close</button></div>{{end}}
 <div class="sheet">
   <header>
     <div class="store">
@@ -79,6 +79,6 @@
   {{if .Signoffs}}<div class="signoffs">{{range .Signoffs}}<div>{{.}}<small>Name, signature &amp; date</small></div>{{end}}</div>{{end}}
   <footer><span>{{.Footer}}</span><span>Printed {{.Printed}}</span></footer>
 </div>
-{{if .AutoPrint}}<script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 300); });</script>{{end}}
+{{if and .AutoPrint (not .ForEmail)}}<script>window.addEventListener("load", function () { setTimeout(function () { window.print(); }, 300); });</script>{{end}}
 </body>
 </html>

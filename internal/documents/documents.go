@@ -67,6 +67,7 @@ type Doc struct {
 	Footer    string
 	Printed   string
 	AutoPrint bool
+	ForEmail  bool // no print bar or script (mail clients strip them anyway)
 }
 
 // HTML renders the document.

@@ -5,7 +5,7 @@ work that should be done is listed under a phase here and ticked off when it
 lands. Things only the shop owner can do (hardware, certificates) are listed
 under **Needs you**.
 
-Status: **phase 3.5 done** · next: **phase 4**
+Status: **phase 4 done** · next: **phase 5**
 
 ## Phase 1 — Hub, tills, sync, printing ✅ `914cc8d`
 
@@ -44,14 +44,17 @@ Status: **phase 3.5 done** · next: **phase 4**
 - [x] Windows installer (`scripts/build-windows.sh`): app + headless hub, firewall rules for the LAN, hub service restarted on upgrade, store data kept on uninstall
 - [x] Fix: opening a single delivery failed (ambiguous column in the query)
 
-## Phase 4 — Setup, safety, updates
+## Phase 4 — Setup, safety, updates ✅ branch `rebuild/phase-4`
 
-- [ ] Shop templates per business type (bookshop, grocery, pharmacy, distributor, general): categories, units, product details, payment methods, tax defaults
-- [ ] Scheduled backups to a second drive, USB or network folder, with retention and a warning when backups stop
-- [ ] Restore from a backup in the app (with a check before replacing data)
-- [ ] Auto-update: the hub keeps the latest version and tills update from it over the LAN, so only one PC needs internet
-- [ ] Version check between hub and tills, with a clear message when one needs updating
-- [ ] Email documents straight from the app (SMTP settings), as well as print / PDF
+- [x] Shop templates per business type (bookshop, grocery, pharmacy, distributor, fashion, hardware, general): categories, units, product details, payment methods, tax defaults; editable product details and units
+- [x] Daily backups copied to a second drive, USB or network folder, with retention and a warning when backups stop or fail
+- [x] Restore from a backup in the app or `zebihub restore` (checks the file, keeps current data first); tills detect it and re-send what the backup missed
+- [x] Tills also catch up if the hub's data is put back by hand from an older copy
+- [x] Auto-update: the hub keeps the latest signed version (from an update address or a file on USB) and tills update from it over the LAN; `cmd/zebirelease` signs releases
+- [x] Version check between hub and tills, with a clear message saying which one to update; till versions shown in Tills
+- [x] Email documents from the hub's mail server (SMTP settings, test email)
+- [x] Branches: tills receive transfers and see what's on its way while offline (queued like sales); branch set-up over a private network documented
+- [x] Fix: long polls now end when the hub closes, so tills reconnect at once after a hub restart
 
 ## Phase 5 — Hardening
 
@@ -59,6 +62,9 @@ Status: **phase 3.5 done** · next: **phase 4**
 - [ ] Returns without a receipt (manager approval, refund or store credit)
 - [ ] Load test: 50,000 products, 1 million sales, 5 tills syncing at once; fix anything slow
 - [ ] Accessibility and keyboard-only pass over every screen
+- [ ] PDF attachments for emailed documents (currently HTML, which prints on any device but isn't a PDF)
+- [ ] Remove products from tills that the hub no longer has after its data is put back from an older copy
+- [ ] Send transfers and record deliveries at a branch while offline (receiving already works offline)
 
 ## Needs you
 
@@ -67,6 +73,12 @@ Status: **phase 3.5 done** · next: **phase 4**
   test page (the ruler must fill exactly one line) and try **Open drawer**. Make
   a sale and print its receipt. If anything is wrong, Settings → Connection →
   **Save support file** and send it over.
+- [ ] **Release signing key:** run `go run ./cmd/zebirelease keygen` once, keep
+  `release.key` safe and offline, and build releases with `ZEBI_UPDATE_KEY` set to
+  the printed public key (`./scripts/release.sh`). Decide where releases are
+  published (the update address hubs check), e.g. GitHub Releases.
+- [ ] **Branches (if you have them):** install Tailscale or ZeroTier on the hub PC
+  and branch PCs, then pair branch tills using the hub's private address.
 - [ ] **Code-signing certificate** (optional, recommended): without one, Windows
   SmartScreen warns when the installer is first run. Signing needs a certificate
   bought in the business's name.

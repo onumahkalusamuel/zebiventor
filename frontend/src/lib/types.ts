@@ -25,6 +25,10 @@ export interface SyncStatus {
   pending: number
   rejected: number
   rev: number
+  hub_version: string
+  update_version: string
+  version_error: string
+  resent: number
 }
 
 export interface Pairing {
@@ -869,4 +873,126 @@ export interface Diagnostics {
   printers_error: string
   database_bytes: Record<string, number>
   time: string
+}
+
+// ---------- phase 4: shop types, backups, updates, email ----------
+
+export interface ProductField {
+  key: string
+  label: string
+  placeholder?: string
+}
+
+export interface ShopTemplate {
+  type: string
+  label: string
+  description: string
+  categories: string[]
+  units: string[]
+  fields: ProductField[]
+  payment_methods: PaymentMethod[]
+  tax_mode: string
+  tax_name: string
+  default_tax_bp: number
+}
+
+export interface TemplateResult {
+  categories: string[] | null
+  payment_methods: string[] | null
+}
+
+export interface BackupFile {
+  name: string
+  path: string
+  size: number
+  at: number
+  where: "local" | "copy"
+}
+
+export interface BackupStatus {
+  last_at: number
+  last_error: string
+  folder: string
+  copy_folder: string
+  copy_last_at: number
+  copy_error: string
+  keep: number
+  warning: string
+  files: BackupFile[] | null
+}
+
+export interface BackupInfo {
+  path: string
+  store_name: string
+  hub_id: string
+  same_store: boolean
+  taken_at: number
+  products: number
+  sales: number
+  last_sale_at: number
+  schema_version: number
+  problem: string
+}
+
+export interface UpdateManifest {
+  version: string
+  platform: string
+  file: string
+  sha256: string
+  size: number
+  notes?: string
+  released_at?: number
+}
+
+export interface UpdatePackage {
+  manifest: UpdateManifest
+  signed: boolean
+  stored_at: number
+  source: "feed" | "upload"
+}
+
+export interface HubUpdateStatus {
+  hub_version: string
+  packages: UpdatePackage[] | null
+  feed_url: string
+  default_feed: string
+  last_check_at: number
+  last_check_error: string
+  signing_key: boolean
+}
+
+export interface UpdateState {
+  current: string
+  available: string
+  notes: string
+  signed: boolean
+  downloading: boolean
+  done: number
+  total: number
+  ready: string
+  error: string
+  can_install: boolean
+}
+
+export interface EmailSettings {
+  host: string
+  port: number
+  security: "starttls" | "tls" | "none"
+  username: string
+  password?: string
+  password_set: boolean
+  from: string
+  from_name: string
+}
+
+export interface EmailDraft {
+  to: string
+  cc: string
+  subject: string
+  message: string
+  ready: boolean
+}
+
+export interface IncomingTransfer extends StockTransfer {
+  received_here: boolean
 }

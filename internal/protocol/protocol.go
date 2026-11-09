@@ -3,7 +3,11 @@
 // minor units and quantities are int64 milli-units (see package money).
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/onumahkalusamuel/zebiventor/internal/update"
+)
 
 // Version is bumped on breaking protocol changes.
 const Version = 1
@@ -39,6 +43,7 @@ const (
 	EntityPaymentMethod = "payment_method"
 	EntityStockLevel    = "stock_level"
 	EntityCustomer      = "customer"
+	EntityTransfer      = "transfer"
 )
 
 // ---------- master data (flows hub -> terminals) ----------
@@ -212,6 +217,7 @@ const (
 	OpCashMovement   = "cash.movement"
 	OpCustomerUpsert = "customer.upsert"
 	OpAccountPayment = "account.payment"
+	OpTransferIn     = "transfer.receive"
 )
 
 // AccountPayment is money received from a customer against what they owe
@@ -407,6 +413,7 @@ type PullResponse struct {
 	PaymentMethods []PaymentMethod `json:"payment_methods,omitempty"`
 	StockLevels    []StockLevel    `json:"stock_levels,omitempty"`
 	Customers      []Customer      `json:"customers,omitempty"`
+	Transfers      []StockTransfer `json:"transfers,omitempty"`
 }
 
 // ---------- pairing & auth ----------
@@ -503,6 +510,17 @@ type UserInput struct {
 	Password string `json:"password"` // empty = unchanged
 	Pin      string `json:"pin"`      // empty = unchanged
 	Active   bool   `json:"active"`
+}
+
+// UpdatePackage is a release the hub holds for tills to download. Raw is
+// the signed manifest.json exactly as published, so tills verify it too.
+type UpdatePackage struct {
+	Manifest  update.Manifest `json:"manifest"`
+	Raw       string          `json:"raw"`
+	Signature string          `json:"signature"`
+	Signed    bool            `json:"signed"`
+	StoredAt  int64           `json:"stored_at"`
+	Source    string          `json:"source"` // "feed" or "upload"
 }
 
 // APIError is the JSON error body returned by the hub.

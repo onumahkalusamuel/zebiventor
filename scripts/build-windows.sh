@@ -10,6 +10,16 @@ cd "$(dirname "$0")/.."
 
 VERSION=$(sed -n 's/.*"productVersion": *"\([^"]*\)".*/\1/p' wails.json)
 LDFLAGS="-X github.com/onumahkalusamuel/zebiventor/internal/appdata.Version=$VERSION"
+# Updates: the public key from `zebirelease keygen` (tills and hubs then only
+# accept releases you signed) and where hubs look for new releases.
+if [ -n "${ZEBI_UPDATE_KEY:-}" ]; then
+  LDFLAGS="$LDFLAGS -X github.com/onumahkalusamuel/zebiventor/internal/update.PublicKey=$ZEBI_UPDATE_KEY"
+else
+  echo "warning: ZEBI_UPDATE_KEY not set; this build accepts unsigned updates (fine for testing only)" >&2
+fi
+if [ -n "${ZEBI_UPDATE_FEED:-}" ]; then
+  LDFLAGS="$LDFLAGS -X github.com/onumahkalusamuel/zebiventor/internal/update.DefaultFeed=$ZEBI_UPDATE_FEED"
+fi
 echo "Building Zebiventor $VERSION for Windows (amd64)"
 
 mkdir -p build/bin

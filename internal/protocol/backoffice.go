@@ -162,6 +162,14 @@ type TransferReceipt struct {
 	Lines []StockTransferLine `json:"lines"`
 }
 
+// TransferReceiveOp is a transfer received at a till (queued offline).
+type TransferReceiveOp struct {
+	TransferID string `json:"transfer_id"`
+	UserID     string `json:"user_id"`
+	ReceivedAt int64  `json:"received_at"`
+	TransferReceipt
+}
+
 // Stock count statuses.
 const (
 	CountOpen      = "open"

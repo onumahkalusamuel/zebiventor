@@ -25,6 +25,14 @@ type Status struct {
 	Pending    int    `json:"pending"`  // ops not yet at the hub
 	Rejected   int    `json:"rejected"` // ops the hub refused (needs attention)
 	Rev        int64  `json:"rev"`
+	// Versions: the hub's, a newer one the hub holds for this till, and a
+	// message when the two can't sync until one is updated.
+	HubVersion    string `json:"hub_version"`
+	UpdateVersion string `json:"update_version"`
+	VersionError  string `json:"version_error"`
+	// Restored: the hub was restored from a backup and this till re-sent
+	// what the backup was missing (count of records re-sent).
+	Resent int `json:"resent"`
 }
 
 // Status returns the current sync status.
@@ -107,6 +115,10 @@ func sleep(ctx context.Context, d time.Duration) bool {
 }
 
 func (t *Terminal) onSyncError(ctx context.Context, err error, fails int) {
+	if isVersionMismatch(err) {
+		t.updateStatus(func(s *Status) { s.Online, s.VersionError, s.LastError = true, err.Error(), err.Error() })
+		return
+	}
 	if isTerminalRevoked(err) {
 		t.updateStatus(func(s *Status) {
 			s.Online, s.Revoked, s.LastError = false, true, "This till was disconnected from the hub. Ask an admin to pair it again."
@@ -126,7 +138,9 @@ func (t *Terminal) onSyncError(ctx context.Context, err error, fails int) {
 }
 
 func (t *Terminal) markOnline() {
-	t.updateStatus(func(s *Status) { s.Online, s.Revoked, s.LastError, s.LastSyncAt = true, false, "", ids.NowMs() })
+	t.updateStatus(func(s *Status) {
+		s.Online, s.Revoked, s.LastError, s.VersionError, s.LastSyncAt = true, false, "", "", ids.NowMs()
+	})
 }
 
 // ---------- pull ----------
@@ -147,7 +161,7 @@ func (t *Terminal) pullLoop(ctx context.Context) {
 		// Don't long-poll on the first round (startup, after an error, or
 		// initial download) so the status turns "online" immediately.
 		wait := 25
-		if since == 0 || !t.Status().Online {
+		if since == 0 || !t.Status().Online || fails > 0 {
 			wait = 0
 		}
 		var resp protocol.PullResponse
@@ -159,7 +173,7 @@ func (t *Terminal) pullLoop(ctx context.Context) {
 		if err != nil {
 			fails++
 			t.onSyncError(ctx, err, fails)
-			if isTerminalRevoked(err) {
+			if isTerminalRevoked(err) || isVersionMismatch(err) {
 				if !sleep(ctx, time.Minute) {
 					return
 				}
@@ -172,6 +186,9 @@ func (t *Terminal) pullLoop(ctx context.Context) {
 		}
 		fails = 0
 		bo.reset()
+		if t.hubRestored(ctx) {
+			continue // start again from the beginning
+		}
 		if resp.Rev > since {
 			if err := t.applyPull(ctx, &resp); err != nil {
 				t.log.Error("applying pulled changes failed", "err", err)
@@ -286,6 +303,9 @@ func (t *Terminal) applyPull(ctx context.Context, r *protocol.PullResponse) erro
 				return err
 			}
 		}
+		if err := saveTransfers(ctx, tx, r.Transfers); err != nil {
+			return err
+		}
 		return setKV(ctx, tx, "last_rev", strconv.FormatInt(r.Rev, 10))
 	})
 }
@@ -313,11 +333,15 @@ func (t *Terminal) pushLoop(ctx context.Context) {
 			fails++
 			t.onSyncError(ctx, err, fails)
 			// Back off, but a new sale (Nudge) retries immediately.
+			wait := bo.next()
+			if isVersionMismatch(err) {
+				wait = time.Minute
+			}
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.wake:
-			case <-time.After(bo.next()):
+			case <-time.After(wait):
 			}
 			continue
 		}
@@ -388,6 +412,11 @@ func (t *Terminal) pushOnce(ctx context.Context) (int, error) {
 					}
 				case protocol.OpRejected:
 					if _, err := tx.ExecContext(ctx, "UPDATE outbox SET status='rejected', attempts=attempts+1, last_error=? WHERE id=?", r.Error, r.ID); err != nil {
+						return err
+					}
+					// A refused receipt can be done again (or by the hub).
+					if _, err := tx.ExecContext(ctx, `UPDATE transfers SET received_locally=0 WHERE id=(SELECT ref_id FROM outbox WHERE id=? AND kind=?)`,
+						r.ID, protocol.OpTransferIn); err != nil {
 						return err
 					}
 				}
